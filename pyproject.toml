@@ -1,0 +1,162 @@
+[project]
+name = "rate-derivatives-pricer"
+version = "0.1.0"
+description = "Production-style interest rate derivatives pricer: quant library, FastAPI service, SDK and dashboard."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+# The quant core depends on NumPy only (no SciPy, never QuantLib): see docs/DECISIONS.md.
+dependencies = ["numpy>=2.1"]
+
+[project.optional-dependencies]
+api = [
+    "fastapi>=0.115",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "uvicorn[standard]>=0.32",
+]
+sdk = ["httpx>=0.27", "pydantic>=2.9"]
+ui = ["streamlit>=1.40", "plotly>=5.24", "rate-derivatives-pricer[sdk]"]
+
+[dependency-groups]
+# Installed by default by `uv sync`. QuantLib is a test oracle only and must never be imported by core/.
+dev = [
+    "pytest>=8.3",
+    "pytest-cov>=6.0",
+    "hypothesis>=6.115",
+    "mypy>=1.13",
+    "ruff>=0.8",
+    "import-linter>=2.1",
+    "pre-commit>=4.0",
+    "QuantLib>=1.36",
+]
+
+[tool.uv]
+# `uv sync` installs core + dev tooling; add `--all-extras` for the api/sdk/ui layers (done in CI).
+default-groups = ["dev"]
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rate_derivatives_pricer"]
+
+# --------------------------------------------------------------------------- ruff
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",  # pycodestyle
+    "F",       # pyflakes
+    "I",       # isort
+    "N",       # pep8-naming
+    "D",       # pydocstyle (Google convention)
+    "UP",      # pyupgrade
+    "B",       # bugbear
+    "SIM",     # simplify
+    "PT",      # pytest style
+    "RUF",     # ruff-specific
+    "T20",     # no print(): logging only
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D"]
+
+# --------------------------------------------------------------------------- mypy
+[tool.mypy]
+python_version = "3.12"
+files = ["src", "tests"]
+mypy_path = "src"
+explicit_package_bases = true
+# Standard mode for api/, sdk/, ui/ and tests (CONVENTIONS.md section 2).
+check_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+# Strict mode on core/ and services/ (`strict` itself is global-only in mypy, hence the explicit flags).
+module = ["rate_derivatives_pricer.core.*", "rate_derivatives_pricer.services.*"]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+disallow_untyped_calls = true
+disallow_untyped_decorators = true
+disallow_any_generics = true
+disallow_subclassing_any = true
+warn_return_any = true
+no_implicit_reexport = true
+extra_checks = true
+
+[[tool.mypy.overrides]]
+module = ["QuantLib.*"]
+ignore_missing_imports = true
+
+# --------------------------------------------------------------------------- pytest
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["--strict-markers", "--strict-config", "--import-mode=importlib"]
+markers = [
+    "validation: comparison against QuantLib (reference oracle)",
+]
+
+[tool.coverage.run]
+source = ["rate_derivatives_pricer"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+
+# --------------------------------------------------------------------------- import-linter
+[tool.importlinter]
+root_package = "rate_derivatives_pricer"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Layers: ui -> sdk -> api -> services -> core (one direction only)"
+type = "layers"
+layers = [
+    "rate_derivatives_pricer.ui",
+    "rate_derivatives_pricer.sdk",
+    "rate_derivatives_pricer.api",
+    "rate_derivatives_pricer.services",
+    "rate_derivatives_pricer.core",
+]
+
+[[tool.importlinter.contracts]]
+name = "ui talks to the API through the sdk only"
+type = "forbidden"
+source_modules = ["rate_derivatives_pricer.ui"]
+forbidden_modules = [
+    "rate_derivatives_pricer.api",
+    "rate_derivatives_pricer.services",
+    "rate_derivatives_pricer.core",
+]
+
+[[tool.importlinter.contracts]]
+name = "sdk does not reach below the API"
+type = "forbidden"
+source_modules = ["rate_derivatives_pricer.sdk"]
+forbidden_modules = ["rate_derivatives_pricer.services", "rate_derivatives_pricer.core"]
+
+[[tool.importlinter.contracts]]
+name = "core stays free of web, UI, SciPy and QuantLib dependencies"
+type = "forbidden"
+source_modules = ["rate_derivatives_pricer.core"]
+forbidden_modules = [
+    "fastapi",
+    "pydantic",
+    "pydantic_settings",
+    "starlette",
+    "httpx",
+    "streamlit",
+    "plotly",
+    "scipy",
+    "QuantLib",
+]
