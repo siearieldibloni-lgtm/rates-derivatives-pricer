@@ -21,7 +21,10 @@ Package : `rate_derivatives_pricer` (repo : `rate-derivatives-pricer`).
 
 ## État actuel
 
-- **Phase courante : 0 (fondations du dépôt).**
+- **Phase courante : 0 (fondations du dépôt)** : livrables implémentés sur la branche `phase-0-foundations`,
+  en attente de PR / fusion. La phase 1 ne démarre qu'après la fusion.
+- Logging : `rate_derivatives_pricer.api.logging_config` (`configure_logging`, `request_context`). Le cœur se
+  contente de `logging.getLogger(__name__)`.
 - Mettre à jour cette section à la fin de chaque phase. Ne jamais travailler en dehors de la phase courante.
 
 ## Périmètre de la v1

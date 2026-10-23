@@ -120,3 +120,28 @@ Statuts : Acceptée, Remplacée, Reportée.
   commit et messages de log/erreur en **anglais**. Le code reste commenté pour la lisibilité.
 - **Conséquences :** `CLAUDE.md` rappelle cette règle en tête de fichier. Les extraits de code et commandes dans la
   documentation restent en anglais.
+
+### ADR-018 : Choix d'outillage de la phase 0
+- **Statut :** Acceptée (22/10/2026)
+- **Contexte :** La phase 0 met en place les garde-fous (ADR-013) ; plusieurs détails d'implémentation n'étaient pas
+  fixés par les documents initiaux.
+- **Décision :**
+  - **Dépendances** : NumPy est la seule dépendance de base (`core`). `api`, `sdk` et `ui` sont des *extras*
+    (`[project.optional-dependencies]`) ; l'outillage de dev est un *dependency group* `dev`, installé par défaut par
+    `uv sync`. Un extra `sdk` (httpx, Pydantic) est ajouté car `ui` dépend du SDK et non de l'API. La CI installe tout
+    avec `uv sync --locked --all-extras`.
+  - **Python 3.12** épinglé (`requires-python = ">=3.12,<3.13"` et `.python-version`).
+  - **mypy** : mode standard global (avec `check_untyped_defs`) et options strictes explicites sur `core.*` et
+    `services.*` (l'option `strict` n'est pas autorisée par module).
+  - **import-linter** : un contrat `layers` (ui > sdk > api > services > core), deux contrats `forbidden` (ui ne voit
+    que le SDK ; le SDK ne descend pas sous l'API) et un contrat `forbidden` sur les paquets externes interdits dans
+    `core` (FastAPI, Pydantic, Starlette, httpx, Streamlit, Plotly, SciPy, QuantLib).
+  - **Logging** : le module `api/logging_config.py` porte la `ContextVar` du `request_id`, un `logging.Filter` qui
+    l'injecte dans chaque enregistrement (y compris ceux de `core`), un formateur JSON (une ligne par événement, ASCII
+    échappé) et un formateur texte pour le local. Le message du log est le nom stable de l'événement ; les champs
+    métier passent par `extra`. Le préfixe `rate_derivatives_pricer.` est retiré du champ `logger`.
+  - **pre-commit** : hooks locaux qui appellent `uv run` (ruff check, ruff format --check, mypy, lint-imports, tests
+    unitaires), pour utiliser exactement les versions de `uv.lock`.
+  - **Fins de ligne** : `.gitattributes` force LF dans le dépôt (développement sous Windows, CI sous Linux).
+- **Conséquences :** `uv` doit être dans le `PATH` pour que le hook pre-commit fonctionne. Le `request_id` sera
+  positionné par un middleware FastAPI en phase 1 via `request_context()`.
