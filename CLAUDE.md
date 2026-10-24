@@ -21,8 +21,9 @@ Package : `rate_derivatives_pricer` (repo : `rate-derivatives-pricer`).
 
 ## État actuel
 
-- **Phase courante : 0 (fondations du dépôt)** : livrables implémentés sur la branche `phase-0-foundations`,
-  en attente de PR / fusion. La phase 1 ne démarre qu'après la fusion.
+- **Phase 0 (fondations du dépôt) : TERMINÉE et fusionnée** (PR #1). Outillage, CI, hooks pre-commit, règle de
+  couches (import-linter) et squelette de logging en place ; 21 tests verts.
+- **Phase courante : 1 (tranche verticale, swap OIS)**. Branche à créer : `phase-1-ois-vertical-slice`.
 - Logging : `rate_derivatives_pricer.api.logging_config` (`configure_logging`, `request_context`). Le cœur se
   contente de `logging.getLogger(__name__)`.
 - Mettre à jour cette section à la fin de chaque phase. Ne jamais travailler en dehors de la phase courante.
@@ -60,14 +61,15 @@ Structure : `src/rate_derivatives_pricer/{core,services,api,sdk,ui}/`.
 ## Commandes
 
 ```
-uv sync                                   # install from uv.lock
+uv sync --all-extras                      # install from uv.lock (core + api/sdk/ui extras + dev tools)
+uv run pre-commit install                 # once per clone: enable the git hooks
 uv run ruff check . && uv run ruff format --check .
 uv run mypy                               # strict on core/ and services/
 uv run lint-imports                       # layer dependency rule
 uv run pytest                             # all tests
 uv run pytest -m validation               # QuantLib validation only
-uv run uvicorn rate_derivatives_pricer.api.main:app --reload
-uv run streamlit run src/rate_derivatives_pricer/ui/app.py
+uv run uvicorn rate_derivatives_pricer.api.main:app --reload   # available from phase 1
+uv run streamlit run src/rate_derivatives_pricer/ui/app.py   # available from phase 1
 docker compose up
 ```
 

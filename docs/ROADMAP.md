@@ -1,6 +1,6 @@
 # ROADMAP
 
-À placer dans `docs/ROADMAP.md`. Une phase = une branche = une PR. La CI doit passer avant la fusion ;
+Une phase = une branche = une PR. La CI doit passer avant la fusion ;
 `DECISIONS.md` est mis à jour dans la même PR.
 
 ## Principes
@@ -9,7 +9,10 @@
 - Chaque phase se termine par un système fonctionnel ; pas de phase « plomberie seule » après la phase 0.
 - Les critères de réussite sont mesurables (tests verts, écart vs QuantLib sous tolérance).
 
-## Phase 0 : fondations du dépôt
+## Phase 0 : fondations du dépôt — TERMINÉE
+
+> Fusionnée dans `main` (PR #1, branche `phase-0-foundations`). CI verte sur la PR et sur `main`.
+> Choix d'outillage consignés dans ADR-018. Prochaine phase : la phase 1.
 
 **Livrables**
 - Repo Git, arborescence d'ARCHITECTURE.md, `pyproject.toml` avec groupes de dépendances.
@@ -22,6 +25,14 @@
 - `uv sync && uv run pytest` passe sur une machine vierge.
 - Un import interdit (ex. `core` important `api`) **fait échouer la CI**.
 - Un commit qui viole `ruff` ou `mypy` est bloqué par `pre-commit`.
+
+**Bilan de vérification**
+- `uv sync && uv run pytest` : 21 tests verts, en local et sur la CI GitHub (machine Linux vierge).
+- Import interdit : `lint-imports` échoue (code de sortie 1) sur un `import QuantLib` ou un import `core -> api`.
+  Vérifié en local ; la CI exécute la même commande.
+- Commit fautif : un commit contenant une erreur `mypy` a été refusé par le hook `pre-commit`.
+- **Protection de branche** GitHub activée sur `main` (CI obligatoire avant fusion). C'est un réglage du dépôt,
+  pas du code : il n'apparaît pas dans l'historique git (*Settings -> Rules*).
 
 ## Phase 1 : tranche verticale, valorisation d'un swap OIS
 

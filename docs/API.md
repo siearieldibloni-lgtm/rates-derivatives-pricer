@@ -1,6 +1,6 @@
 # API
 
-À placer dans `docs/API.md`. Contrat HTTP, correspondance des erreurs, observabilité et spécification des logs.
+Contrat HTTP, correspondance des erreurs, observabilité et spécification des logs.
 
 ## 1. Principes
 
@@ -114,6 +114,10 @@ JSON, un événement par ligne, champs stables (filtrables avec `jq`, chargeable
 
 Le `request_id` est injecté via `contextvars` dans tous les logs d'une requête, y compris ceux émis depuis `core`,
 qui n'utilise que le module standard `logging` (le cœur émet, l'API configure).
+
+Implémentation (phase 0) : `api/logging_config.py` fournit `configure_logging(level, log_format)` à appeler au
+démarrage, et `request_context(request_id)` à utiliser dans un middleware (id repris de `X-Request-ID` ou généré).
+Les champs métier se passent avec `extra={...}` ; le message du log est le nom stable de l'événement.
 
 ### 7.2 Logs de calcul
 
