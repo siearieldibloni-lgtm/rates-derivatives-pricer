@@ -3,7 +3,8 @@
 Un **pricer de dérivés de taux** extensible, de type production, en Python : bibliothèque quant en POO,
 service FastAPI, SDK Python et dashboard Streamlit.
 
-> Statut : **Phase 0, fondations du dépôt.** Voir `docs/ROADMAP.md`.
+> Statut : **Phase 0 terminée** (outillage, CI, logging). **Phase 1 (swap OIS de bout en bout) à venir.**
+> Voir `docs/ROADMAP.md`.
 
 ## Objectifs
 
@@ -29,8 +30,14 @@ ui -> sdk -> (HTTP) -> api -> services -> core
 ## Démarrage rapide
 
 ```
-uv sync
+uv sync --all-extras
+uv run pre-commit install    # une fois par clone : active les hooks git
 uv run pytest
+```
+
+L'API et le dashboard arrivent en phase 1 :
+
+```
 uv run uvicorn rate_derivatives_pricer.api.main:app --reload
 uv run streamlit run src/rate_derivatives_pricer/ui/app.py
 ```

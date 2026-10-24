@@ -1,7 +1,5 @@
 # CONVENTIONS
 
-À placer dans `docs/CONVENTIONS.md`.
-
 ## 1. Langue
 
 | Élément | Langue |
@@ -69,7 +67,7 @@ On compare **couche par couche**, pour pouvoir localiser l'origine d'un écart d
 
 ## 6. Pipeline CI (GitHub Actions), dans l'ordre
 
-1. `uv sync`
+1. `uv sync --locked --all-extras` (échoue si `uv.lock` n'est pas à jour avec `pyproject.toml`)
 2. `ruff check` + `ruff format --check`
 3. `mypy`
 4. `lint-imports`
@@ -77,7 +75,13 @@ On compare **couche par couche**, pour pouvoir localiser l'origine d'un écart d
 6. Build Docker + smoke test (à partir de la phase 4)
 7. Publication de la couverture en artefact
 
-Un job qui échoue bloque la fusion. `pre-commit` exécute localement la partie rapide (ruff, mypy, tests unitaires rapides).
+Un job qui échoue bloque la fusion : la **protection de branche** de `main` est activée dans GitHub
+(*Settings -> Rules*, check obligatoire « Lint, types, layers, tests »). Ce réglage vit dans GitHub, pas dans le
+dépôt : à refaire si le dépôt est recréé ou transféré, et à mettre à jour si le job est renommé dans `ci.yml`.
+
+`pre-commit` exécute localement la partie rapide (ruff, format, mypy, import-linter, tests unitaires). Les hooks
+s'activent **une fois par clone** avec `uv run pre-commit install` (le dossier `.git/hooks` n'est pas versionné), et
+`uv` doit être dans le `PATH` du terminal qui lance `git commit`.
 
 ## 7. Configuration
 

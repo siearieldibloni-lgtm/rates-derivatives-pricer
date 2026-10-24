@@ -1,7 +1,5 @@
 # ARCHITECTURE
 
-À placer dans `docs/ARCHITECTURE.md`.
-
 ## 1. Couches et règle de dépendance
 
 ```
@@ -166,7 +164,8 @@ Traduites en codes HTTP dans `docs/API.md`.
 ```
 rate-derivatives-pricer/
 ├── CLAUDE.md  README.md  pyproject.toml  uv.lock  .pre-commit-config.yaml
-├── Dockerfile.api  Dockerfile.ui  docker-compose.yml
+├── .gitignore  .gitattributes  .python-version
+├── Dockerfile.api  Dockerfile.ui  docker-compose.yml      (phase 4)
 ├── .github/workflows/ci.yml
 ├── docs/   (ARCHITECTURE, ROADMAP, CONVENTIONS, API, DECISIONS)
 ├── data/   market/ (snapshots CSV/JSON)   trades/ (swaps d'exemple JSON)
@@ -176,13 +175,20 @@ rate-derivatives-pricer/
 │   │   ├── market/ (quotes, indices, curves, interpolation, bootstrap, providers)
 │   │   ├── instruments/ (cashflows, legs, swaps)
 │   │   ├── engines/  risk/  registry/  errors.py
-│   ├── services/  api/  sdk/  ui/
+│   ├── services/  sdk/  ui/
+│   └── api/   (logging_config.py : configuration du logging et request_id, en place depuis la phase 0)
 └── tests/  unit/  integration/  validation/  api/  fixtures/
 ```
 
-Un seul `pyproject.toml`, un seul package racine, des groupes de dépendances optionnels : `core` (NumPy),
-`api` (FastAPI, Pydantic, pydantic-settings), `ui` (Streamlit, Plotly), `dev` (pytest, hypothesis, QuantLib, ruff,
-mypy, import-linter, pre-commit). Dataclasses dans `core` ; Pydantic uniquement dans `api`/`sdk`.
+Un seul `pyproject.toml`, un seul package racine. Les dépendances sont réparties ainsi :
+
+- **Dépendances de base** : NumPy (le `core`).
+- **Extras optionnels** (`pip install paquet[api]`) : `api` (FastAPI, Pydantic, pydantic-settings, Uvicorn),
+  `sdk` (httpx, Pydantic), `ui` (Streamlit, Plotly, et le SDK).
+- **Groupe de développement `dev`** (installé par défaut par `uv sync`) : pytest, pytest-cov, hypothesis, QuantLib,
+  ruff, mypy, import-linter, pre-commit.
+
+Dataclasses dans `core` ; Pydantic uniquement dans `api`/`sdk`. Voir ADR-018.
 
 ## 13. Patterns de conception à savoir nommer en entretien
 

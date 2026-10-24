@@ -1,6 +1,6 @@
 # DECISIONS
 
-À placer dans `docs/DECISIONS.md`. Journal des décisions, style ADR. On ajoute de nouvelles entrées ; on ne réécrit
+Journal des décisions, style ADR. On ajoute de nouvelles entrées ; on ne réécrit
 jamais l'historique (une décision est « remplacée » par une nouvelle entrée).
 Format d'une entrée : **Contexte / Décision / Conséquences**.
 
