@@ -29,7 +29,8 @@ MARKET_DIR = ROOT / "data" / "market"
 TRADES_FILE = ROOT / "data" / "trades" / "ois_samples.json"
 GOLDEN_FILE = ROOT / "tests" / "fixtures" / "golden_EUR_2026-10-19.json"
 SNAPSHOT = "EUR_2026-10-19"
-# Golden comparisons allow for floating-point noise across platforms only.
+# Golden comparisons allow for floating-point noise across platforms (Windows vs Linux libm) only.
+# Relative for par rates and annuities, per unit of notional for PVs.
 GOLDEN_REL = 1e-12
 GOLDEN_DISCOUNT_FACTOR_ABS = 1e-14
 
@@ -87,9 +88,15 @@ def test_results_match_the_golden_file() -> None:
         assert actual["discount_factors"][label] == pytest.approx(
             discount_factor, abs=GOLDEN_DISCOUNT_FACTOR_ABS
         ), label
+    notionals = {trade["id"]: float(trade["params"]["notional"]) for trade in SAMPLE_TRADES}
     for trade_id, figures in golden["trades"].items():
         for name, value in figures.items():
-            assert actual["trades"][trade_id][name] == pytest.approx(value, rel=GOLDEN_REL), (
-                trade_id,
-                name,
+            # A PV close to zero is a difference of two large legs: compare it per unit of
+            # notional (ADR-024), otherwise last-bit exp/log differences between platforms
+            # dominate. Par rates and annuities are compared relatively.
+            tolerance = (
+                pytest.approx(value, abs=GOLDEN_REL * notionals[trade_id])
+                if name == "present_value"
+                else pytest.approx(value, rel=GOLDEN_REL)
             )
+            assert actual["trades"][trade_id][name] == tolerance, (trade_id, name)
