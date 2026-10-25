@@ -1,0 +1,17 @@
+{
+  "description": "Sample EUR ESTR OIS trades (rates in decimal, notionals in EUR).",
+  "trades": [
+    {"id": "OIS-5Y-PAYER", "type": "ois_swap",
+     "params": {"notional": 10000000, "fixed_rate": 0.0225, "direction": "pay_fixed", "maturity": "5Y"}},
+    {"id": "OIS-1Y-RECEIVER", "type": "ois_swap",
+     "params": {"notional": 50000000, "fixed_rate": 0.019, "direction": "receive_fixed", "maturity": "1Y"}},
+    {"id": "OIS-30Y-RECEIVER", "type": "ois_swap",
+     "params": {"notional": 5000000, "fixed_rate": 0.0265, "direction": "receive_fixed", "maturity": "30Y"}},
+    {"id": "OIS-SEASONED-2Y", "type": "ois_swap",
+     "params": {"notional": 25000000, "fixed_rate": 0.021, "direction": "pay_fixed",
+                "start_date": "2026-03-16", "maturity": "2Y"}},
+    {"id": "OIS-FORWARD-10Y", "type": "ois_swap",
+     "params": {"notional": 20000000, "fixed_rate": 0.025, "direction": "pay_fixed",
+                "start_date": "2027-10-21", "end_date": "2037-10-21"}}
+  ]
+}
