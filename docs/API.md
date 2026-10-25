@@ -48,6 +48,38 @@ Contrat HTTP, correspondance des erreurs, observabilité et spécification des l
 - `type` est un discriminant (union discriminée Pydantic) ; `/v1/catalog` permet à l'UI de construire les formulaires dynamiquement.
 - `/v1/risk` ajoute `"measures": ["parallel_dv01", "key_rate_dv01", ...]` et des options de bump (taille en bp, mode).
 - Formats : dates ISO 8601 ; taux en **décimal** ; cotations avec `"unit": "percent" | "decimal" | "bp"` ; PV en devise du trade.
+- Les champs inconnus sont refusés (`VALIDATION_ERROR`) : une faute de frappe ne doit jamais passer silencieusement.
+
+### Paramètres d'un swap OIS (`"type": "ois_swap"`, phase 1)
+
+| Champ | Type | Défaut | Rôle |
+|---|---|---|---|
+| `currency` | texte | `"EUR"` | Sélectionne les conventions (ADR-019) |
+| `notional` | nombre > 0 | requis | Notionnel des deux jambes, en devise du trade |
+| `fixed_rate` | nombre | requis | Taux fixe en décimal |
+| `direction` | `"pay_fixed"` \| `"receive_fixed"` | requis | Sens, nommé d'après la jambe fixe |
+| `maturity` | tenor (`"5Y"`, `"18M"`) | - | Durée depuis la date de départ |
+| `end_date` | date | - | Date de fin explicite (exactement un de `maturity` / `end_date`) |
+| `start_date` | date | date spot | Départ explicite : swap déjà commencé (fixings requis, ADR-020) ou forward |
+
+Le schéma JSON de ces paramètres est publié par `/v1/catalog` (`trade_schemas`).
+
+Exemple :
+
+```
+POST /v1/price
+{
+  "market":  { "snapshot": "EUR_2026-10-19" },
+  "trade":   { "type": "ois_swap",
+               "params": { "notional": 10000000, "fixed_rate": 0.0225, "direction": "pay_fixed", "maturity": "5Y" } },
+  "options": { "interpolation": "log_linear_df" }
+}
+```
+
+Le résultat contient `present_value`, `par_rate` (`null` s'il ne reste aucun coupon fixe), `annuity`
+(`sum N tau_i P(paiement_i)` sur les coupons fixes restants), `pvbp` (`annuity x 1e-4`), le PV par jambe et le tableau
+des flux futurs (montants signés : positif = reçu). `/v1/curves/build` renvoie les nœuds calibrés (cotation, résidu,
+itérations, DF, zéro) et une grille mensuelle (DF, zéro continu Act/365F, forward 1M Act/360).
 
 ## 4. Enveloppe de réponse
 
@@ -59,12 +91,15 @@ Contrat HTTP, correspondance des erreurs, observabilité et spécification des l
     "timings_ms": { "curve_build": 0.0, "pricing": 0.0 },
     "curve_cache": "hit" | "miss",
     "versions": { "api": "...", "core": "..." },
-    "warnings": []
+    "warnings": [],
+    "input_hashes": { "market": "<sha256>", "trade": "<sha256>" }
   }
 }
 ```
 
-Le bloc `diagnostics` est permanent : il alimente l'onglet Diagnostic et les investigations de support.
+Le bloc `diagnostics` est permanent : il alimente l'onglet Diagnostic et les investigations de support. Tous les
+endpoints `/v1/*` utilisent cette enveloppe ; `/health` et `/ready` renvoient `{"status", "checks"}` (ADR-025).
+`input_hashes` reprend les empreintes des logs d'audit (section 7.2).
 
 ## 5. Erreurs
 
@@ -162,8 +197,11 @@ result = client.price(market="EUR_2026-10-19", trade=my_swap)
 risk   = client.risk(market=..., trade=..., measures=["key_rate_dv01"])
 ```
 
-- Modèles de réponse typés (réutilisent les schémas Pydantic de l'API).
-- Exceptions client mappées sur les codes d'erreur de l'API (`CalibrationFailedError`, ...).
+- Modèles de réponse typés (réutilisent les schémas Pydantic de l'API, réexportés par `sdk/models.py`, ADR-021).
+- Exceptions client mappées sur les codes d'erreur de l'API (`CalibrationFailedError`, ...) ; une API injoignable
+  lève `ApiUnavailableError` (code `CONNECTION_ERROR`, sans statut HTTP).
+- Phase 1 : `PricerClient` (`price`, `build_curves`, `catalog`, `list_snapshots`, `get_snapshot`, `health`, `ready`,
+  `version`) et le constructeur de trade `ois_swap(...)`.
 - Timeouts et retries configurables ; version du SDK vérifiée contre `/v1/version`.
 - Le SDK sert aussi de test d'intégration vivant : Streamlit l'utilise, donc toute rupture de contrat se voit immédiatement.
 

@@ -145,3 +145,119 @@ Statuts : Acceptée, Remplacée, Reportée.
   - **Fins de ligne** : `.gitattributes` force LF dans le dépôt (développement sous Windows, CI sous Linux).
 - **Conséquences :** `uv` doit être dans le `PATH` pour que le hook pre-commit fonctionne. Le `request_id` sera
   positionné par un middleware FastAPI en phase 1 via `request_context()`.
+
+### ADR-019 : Conventions EUR €STR (OIS et dépôt overnight)
+- **Statut :** Acceptée (24/10/2026, validées par le porteur du projet avant implémentation, règle 7 de CLAUDE.md)
+- **Contexte :** Le bootstrap et les coupons OIS dépendent de conventions qu'on ne doit pas deviner ; elles doivent
+  aussi être alignées sur QuantLib pour atteindre les tolérances de validation.
+- **Décision :** Conventions décrites dans `core/conventions/data/EUR.json` (aucune n'est codée en dur) :
+  - **Calendrier** TARGET ; **spot lag** 2 jours ouvrés (date de valorisation ajustée *following*, puis +2 jours).
+  - **OIS** : fréquence annuelle sur les deux jambes (une seule période si maturité <= 1 an, stub en tête sinon),
+    Act/360 sur les deux jambes, Modified Following (dates intermédiaires et date de fin), génération *backward*,
+    **payment lag 1 jour ouvré TARGET**, composition quotidienne in arrears **sans lookback, lockout ni observation
+    shift**.
+  - **Règle de fin de mois** : appliquée si la date de départ est le dernier jour ouvré du mois ; la maturité est
+    alors le dernier jour ouvré du mois cible, sinon `départ + tenor` ajusté par l'échéancier (comportement de
+    `MakeOIS` de QuantLib).
+  - **Dépôt overnight €STR** : départ T+0, fin à J+1 ouvré, Act/360, taux simple.
+  - **Instruments de calibration** : dépôt ON puis OIS 1W, 2W, 1M, 2M, 3M, 6M, 9M, 1Y, 18M, 2Y-10Y, 12Y, 15Y, 20Y,
+    25Y, 30Y.
+  - **Day counts 30/360** : deux variantes explicites, `30/360` (Bond Basis, ISDA 4.16(f)) et `30E/360` (Eurobond,
+    ISDA 4.16(g)), plutôt qu'un `Thirty360` ambigu.
+- **Conséquences :** Les échéanciers sont identiques à ceux de QuantLib (`Schedule`, `MakeOIS`) date par date. Changer
+  une convention revient à modifier le JSON et à rejouer la validation.
+
+### ADR-020 : Fixings €STR et composition des coupons overnight
+- **Statut :** Acceptée (24/10/2026, validée par le porteur du projet)
+- **Contexte :** Un swap déjà commencé dépend des fixings passés ; le fixing du jour n'est publié qu'à J+1.
+- **Décision :**
+  - Fixings **strictement antérieurs** à la date de valorisation : obligatoires (`MarketDataError` sinon, code HTTP
+    `MARKET_DATA_INVALID`, avec l'indice et la date manquante).
+  - Fixing **du jour de valorisation** : utilisé s'il est fourni, projeté sinon (comportement QuantLib).
+  - Partie projetée : le produit des forwards overnight se **télescope** en `P(d_k) / P(fin)` sur la courbe de
+    projection. C'est exact (pas une approximation) et évite une boucle quotidienne ; la boucle jour par jour n'est
+    faite que sur la partie réalisée.
+  - Un flux payé **à la date de valorisation ou avant** est considéré comme échu et exclu du PV (équivalent de
+    `includeReferenceDateEvents = false` dans QuantLib).
+  - Un snapshot refuse tout fixing daté après sa date de valorisation.
+- **Conséquences :** Le snapshot de référence contient les fixings €STR depuis le 02/01/2026 ; un swap commencé avant
+  cette date est refusé avec une erreur explicite.
+
+### ADR-021 : Frontières entre couches (DTO, schémas partagés, contrats import-linter)
+- **Statut :** Acceptée (24/10/2026, complète ADR-006 et ADR-018)
+- **Contexte :** `services` ne doit pas dépendre de Pydantic (réservé à `api`/`sdk`), et le SDK doit réutiliser les
+  schémas de l'API (docs/API.md section 8). Le contrat import-linter de la phase 0 interdisait à `ui` d'importer
+  `api` *même indirectement*, ce qui rendait impossible la réutilisation des schémas par le SDK.
+- **Décision :**
+  - `api/schemas.py` ne dépend que de Pydantic (ni FastAPI ni `core`) ; le SDK le réexporte dans `sdk/models.py`.
+  - `services/requests.py` définit les entrées du service en dataclasses figées ; les routes convertissent les
+    modèles Pydantic en ces dataclasses, `services/mappers.py` les convertit en objets du domaine et transforme les
+    résultats en dictionnaires JSON, validés ensuite par les schémas de réponse.
+  - Le contrat `ui` est scindé : (1) `ui` n'atteint jamais `services` ni `core`, même indirectement ; (2) `ui`
+    n'importe jamais `api` directement (import indirect via le SDK autorisé).
+  - Les paramètres d'un trade sont validés par un schéma propre à son type (`TRADE_PARAMS_SCHEMAS`), publié dans
+    `/v1/catalog` (JSON Schema) pour que l'UI puisse construire ses formulaires.
+- **Conséquences :** Une rupture du contrat HTTP casse immédiatement le SDK et le dashboard (tests `tests/api`).
+
+### ADR-022 : Choix numériques du bootstrap
+- **Statut :** Acceptée (24/10/2026)
+- **Décision :**
+  - **Pilier** d'un OIS = sa dernière date de paiement (fin + payment lag), comme `Pillar::LastRelevantDate` de
+    QuantLib ; pilier d'un dépôt = sa maturité. Deux instruments sur le même pilier sont refusés.
+  - **Bootstrap séquentiel** en une passe (exact avec une interpolation locale) ; le solveur cherche `P_i` dans
+    `[P_{i-1} e^{-1,0 dt}, P_{i-1} e^{+0,5 dt}]` (forwards entre -50 % et +100 %).
+  - **Solveur par défaut** : Brent, tolérance absolue 1e-15 sur le DF ; Newton (dérivée par différences finies,
+    garde-fou par bissection) disponible en option. Un pilier dont le résidu final dépasse 1e-12 (en taux décimal)
+    lève `CalibrationError` avec le pilier et le résidu.
+  - **Extrapolation** au-delà du dernier pilier : forward instantané constant pour les deux interpolations
+    (`log_linear_df` et `linear_zero`), comme QuantLib. Pour `linear_zero`, le zéro en `t = 0` est pris égal à
+    celui du premier pilier.
+  - **Temps des courbes** : Act/365F depuis la date de valorisation (ADR-008).
+- **Conséquences :** Résidus de calibration mesurés < 1e-14 ; 24 piliers bootstrapés en ~0,1 s.
+
+### ADR-023 : Données de marché synthétiques
+- **Statut :** Acceptée (24/10/2026, validée par le porteur du projet)
+- **Décision :** Le snapshot `data/market/EUR_2026-10-19.json` est **synthétique** (niveaux plausibles, €STR ~1,92 %,
+  courbe OIS 1,87 %-2,73 %) et l'indique dans son champ `description`. Les fixings €STR (02/01/2026-16/10/2026) sont
+  générés sur les jours ouvrés TARGET avec 3 décimales, comme la publication BCE.
+- **Conséquences :** Aucun chiffre de ce dépôt ne doit être lu comme un niveau de marché réel. Des cotations réelles
+  pourront remplacer ce fichier sans changement de code.
+
+### ADR-024 : Validation contre QuantLib, bilan de la phase 1
+- **Statut :** Acceptée (24/10/2026, applique ADR-014)
+- **Contexte :** Les tolérances de départ (CONVENTIONS.md section 5) doivent être confrontées aux écarts réels.
+- **Décision :**
+  - Tolérances **inchangées** (module unique `tests/validation/tolerances.py`). Écarts maximaux mesurés sur 9 marchés
+    (3 dates de valorisation, dont une fin de mois et une veille de Pâques, x 3 chocs parallèles -250/0/+150 bp) :
+    DF 2,5e-13 (`log_linear_df`) et 2,3e-11 (`linear_zero`, l'écart vient de la précision du bootstrap QuantLib),
+    PV/notionnel 2,3e-13, par rate 9,9e-11 relatif, annuité 5,6e-14 relatif, sur 1 404 swaps spot.
+  - Le PV est comparé **relativement au notionnel** : un swap proche du par a un PV proche de zéro, pour lequel un écart
+    relatif au PV n'a pas de sens.
+  - QuantLib reçoit la même date d'évaluation que nous via un gestionnaire de contexte (`evaluation_date`) qui restaure
+    la valeur globale précédente (ADR-009).
+- **Conséquences :** La validation tourne en ~20 s (`uv run pytest -m validation`).
+
+### ADR-025 : Détails du contrat HTTP v1
+- **Statut :** Acceptée (24/10/2026, précise ADR-011)
+- **Décision :**
+  - Tous les endpoints `/v1/*` répondent avec l'enveloppe `request_id` + `result` + `diagnostics` ; `/health` et
+    `/ready` répondent `{"status", "checks"}` (`/ready` en 503 si un registry est vide).
+  - `diagnostics.input_hashes` expose les empreintes du marché et du trade (mêmes valeurs que dans les logs d'audit).
+  - Snapshot introuvable : `MarketDataNotFoundError` (sous-classe de `MarketDataError`) traduite en 404 `NOT_FOUND`.
+  - Trade dont la devise diffère de celle du marché : `INVALID_TRADE_DEFINITION` (pas de FX en v1).
+  - `X-Request-ID` client accepté s'il fait 1 à 128 caractères `[A-Za-z0-9._-]`, sinon remplacé par un id généré.
+  - Les exceptions inattendues sont interceptées par le middleware ASGI (qui connaît encore le `request_id`) :
+    réponse 500 `INTERNAL_ERROR` générique, trace complète dans les logs.
+  - Variables d'environnement : `LOG_LEVEL`, `LOG_FORMAT`, `MARKET_DATA_DIR`, `CURVE_CACHE_SIZE`,
+    `CURVE_CACHE_TTL_SECONDS`, `GIT_COMMIT` ; `PRICER_API_URL` pour le dashboard.
+  - Les routes de calcul sont des fonctions synchrones : FastAPI les exécute dans un thread, le bootstrap (CPU) ne
+    bloque pas la boucle d'événements, et le `request_id` (ContextVar) est propagé au thread.
+
+### ADR-026 : Clé du cache de courbes
+- **Statut :** Acceptée (24/10/2026, précise docs/API.md section 6)
+- **Décision :** Clé = SHA-256 de la sérialisation JSON canonique (clés triées) de : données du snapshot (date,
+  devise, cotations avec leurs unités, fixings), interpolation, **solveur**, version du cœur. Le **nom** et la
+  description du snapshot sont exclus : les mêmes données passées par référence ou par valeur partagent la même
+  entrée de cache.
+- **Conséquences :** Un PV différent avec une même empreinte d'entrée et une même version révèle un bug ; le cache
+  reste par process (ADR-005).

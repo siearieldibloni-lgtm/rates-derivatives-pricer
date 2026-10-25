@@ -1,1 +1,31 @@
-"""Typed Python client (httpx) for the pricing API. Depends on the API schemas only."""
+"""Typed Python client of the pricing API (httpx); depends on the API schemas only."""
+
+from rate_derivatives_pricer.sdk.client import (
+    ApiUnavailableError,
+    CalibrationFailedError,
+    ComputationFailedError,
+    InternalServerError,
+    InvalidTradeDefinitionError,
+    MarketDataInvalidError,
+    NotFoundError,
+    PricerApiError,
+    PricerClient,
+    UnsupportedInstrumentError,
+    ValidationFailedError,
+    ois_swap,
+)
+
+__all__ = [
+    "ApiUnavailableError",
+    "CalibrationFailedError",
+    "ComputationFailedError",
+    "InternalServerError",
+    "InvalidTradeDefinitionError",
+    "MarketDataInvalidError",
+    "NotFoundError",
+    "PricerApiError",
+    "PricerClient",
+    "UnsupportedInstrumentError",
+    "ValidationFailedError",
+    "ois_swap",
+]

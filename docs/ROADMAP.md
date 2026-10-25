@@ -34,7 +34,10 @@ Une phase = une branche = une PR. La CI doit passer avant la fusion ;
 - **Protection de branche** GitHub activée sur `main` (CI obligatoire avant fusion). C'est un réglage du dépôt,
   pas du code : il n'apparaît pas dans l'historique git (*Settings -> Rules*).
 
-## Phase 1 : tranche verticale, valorisation d'un swap OIS
+## Phase 1 : tranche verticale, valorisation d'un swap OIS — IMPLÉMENTÉE (PR en revue)
+
+> Branche `phase-1-ois-vertical-slice`. Conventions validées avant implémentation (ADR-019, ADR-020). Décisions de la
+> phase : ADR-019 à ADR-026. La phase sera marquée TERMINÉE après fusion dans `main` avec la CI verte.
 
 **Cœur**
 - `TargetCalendar`, `Act360`, `Act365Fixed`, `Thirty360`, business day conventions, `Tenor`, `CurrencyConventions` (EUR).
@@ -58,6 +61,21 @@ Une phase = une branche = une PR. La CI doit passer avant la fusion ;
 - PV, par rate, annuité d'un swap OIS : écart relatif < 1e-8 vs QuantLib sur une grille (maturités x sens x notionnels).
 - Un swap au par rate a un PV nul (test de propriété, tolérance 1e-10).
 - Couverture de `core/` >= 90 %.
+
+**Bilan de vérification** (local, Windows ; la CI rejoue la même boucle sous Linux)
+- Boucle `ruff check`, `ruff format --check`, `mypy` (strict sur `core/` et `services/`), `lint-imports` (5 contrats)
+  et `pytest` : **265 tests verts**, dont 75 de validation QuantLib.
+- Calendrier TARGET (1995-2060), `adjust`/`advance`/fin de mois, day counts, échéanciers (fréquences x règles x fin
+  de mois x 2 ans de dates de départ) : **égalité exacte** avec QuantLib.
+- Courbe €STR sur 9 marchés (3 dates de valorisation x 3 chocs) : écart DF max **2,5e-13** (`log_linear_df`) et
+  2,3e-11 (`linear_zero`) aux piliers, entre piliers et en extrapolation (critère : 1e-10).
+- 1 404 swaps OIS spot (13 maturités x 2 sens x 2 notionnels x 3 taux fixes x 9 marchés) plus des swaps déjà
+  commencés et forward : PV/notionnel **2,3e-13**, par rate 9,9e-11, annuité 5,6e-14 (critère : 1e-8).
+- PV nul au par rate (hypothesis) : |PV| <= 1e-10 x notionnel.
+- Couverture de `core/` : **99 %** (96 % sur l'ensemble du paquet).
+- Tranche verticale : `uvicorn` sert les endpoints de la phase 1, le SDK et le dashboard Streamlit les consomment ;
+  un test d'intégration vérifie que SDK -> HTTP -> API -> services -> cœur donne exactement les mêmes nombres que le
+  cœur appelé directement, et un *golden file* fige les résultats de référence.
 
 ## Phase 2 : IRS vanille, multi-courbes, risque de base
 
