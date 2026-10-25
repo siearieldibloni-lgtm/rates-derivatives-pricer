@@ -99,7 +99,8 @@ no_implicit_reexport = true
 extra_checks = true
 
 [[tool.mypy.overrides]]
-module = ["QuantLib.*"]
+# Third-party packages without type information.
+module = ["QuantLib.*", "plotly.*"]
 ignore_missing_imports = true
 
 # --------------------------------------------------------------------------- pytest
@@ -108,6 +109,10 @@ testpaths = ["tests"]
 addopts = ["--strict-markers", "--strict-config", "--import-mode=importlib"]
 # Repository root on sys.path so that tests can share helpers (tests.validation.tolerances).
 pythonpath = ["."]
+filterwarnings = [
+    # Starlette's TestClient announces a future switch to httpx2; httpx is still the pinned client.
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated",
+]
 markers = [
     "validation: comparison against QuantLib (reference oracle)",
 ]
@@ -137,14 +142,19 @@ layers = [
 ]
 
 [[tool.importlinter.contracts]]
-name = "ui talks to the API through the sdk only"
+name = "ui never reaches services or core, even indirectly"
 type = "forbidden"
 source_modules = ["rate_derivatives_pricer.ui"]
-forbidden_modules = [
-    "rate_derivatives_pricer.api",
-    "rate_derivatives_pricer.services",
-    "rate_derivatives_pricer.core",
-]
+forbidden_modules = ["rate_derivatives_pricer.services", "rate_derivatives_pricer.core"]
+
+[[tool.importlinter.contracts]]
+# The SDK re-exports the API's Pydantic schemas (ADR-021): ui -> sdk -> api.schemas is expected,
+# a direct ui -> api import is not.
+name = "ui talks to the API through the sdk only (no direct api import)"
+type = "forbidden"
+source_modules = ["rate_derivatives_pricer.ui"]
+forbidden_modules = ["rate_derivatives_pricer.api"]
+allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
 name = "sdk does not reach below the API"
