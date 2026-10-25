@@ -23,9 +23,10 @@ Package : `rate_derivatives_pricer` (repo : `rate-derivatives-pricer`).
 
 - **Phase 0 (fondations du dépôt) : TERMINÉE et fusionnée** (PR #1). Outillage, CI, hooks pre-commit, règle de
   couches (import-linter) et squelette de logging en place ; 21 tests verts.
-- **Phase courante : 1 (tranche verticale, swap OIS) — implémentée** sur la branche `phase-1-ois-vertical-slice`,
-  PR en revue (265 tests verts, validation QuantLib, couverture `core/` 99 %). À marquer TERMINÉE après fusion ; la
-  phase suivante est la 2 (IRS vanille, multi-courbes, risque de base).
+- **Phase 1 (tranche verticale, swap OIS €STR) : TERMINÉE et fusionnée** (PR #3). Cœur, service, API, SDK et
+  dashboard en place ; 265 tests verts dont la validation QuantLib, couverture `core/` 99 %, CI verte.
+- **Phase courante : 2 (IRS vanille, multi-courbes, risque de base)**. Branche à créer :
+  `phase-2-irs-multicurve-risk`.
 - Conventions EUR dans `core/conventions/data/EUR.json` (ADR-019) ; fixings et composition overnight : ADR-020.
 - Logging : `rate_derivatives_pricer.api.logging_config` (`configure_logging`, `request_context`). Le cœur se
   contente de `logging.getLogger(__name__)` ; le middleware `api/middleware.py` positionne le `request_id`.
