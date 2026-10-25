@@ -23,9 +23,13 @@ Package : `rate_derivatives_pricer` (repo : `rate-derivatives-pricer`).
 
 - **Phase 0 (fondations du dépôt) : TERMINÉE et fusionnée** (PR #1). Outillage, CI, hooks pre-commit, règle de
   couches (import-linter) et squelette de logging en place ; 21 tests verts.
-- **Phase courante : 1 (tranche verticale, swap OIS)**. Branche à créer : `phase-1-ois-vertical-slice`.
+- **Phase courante : 1 (tranche verticale, swap OIS) — implémentée** sur la branche `phase-1-ois-vertical-slice`,
+  PR en revue (265 tests verts, validation QuantLib, couverture `core/` 99 %). À marquer TERMINÉE après fusion ; la
+  phase suivante est la 2 (IRS vanille, multi-courbes, risque de base).
+- Conventions EUR dans `core/conventions/data/EUR.json` (ADR-019) ; fixings et composition overnight : ADR-020.
 - Logging : `rate_derivatives_pricer.api.logging_config` (`configure_logging`, `request_context`). Le cœur se
-  contente de `logging.getLogger(__name__)`.
+  contente de `logging.getLogger(__name__)` ; le middleware `api/middleware.py` positionne le `request_id`.
+- Tolérances de validation : uniquement dans `tests/validation/tolerances.py`.
 - Mettre à jour cette section à la fin de chaque phase. Ne jamais travailler en dehors de la phase courante.
 
 ## Périmètre de la v1
@@ -68,8 +72,8 @@ uv run mypy                               # strict on core/ and services/
 uv run lint-imports                       # layer dependency rule
 uv run pytest                             # all tests
 uv run pytest -m validation               # QuantLib validation only
-uv run uvicorn rate_derivatives_pricer.api.main:app --reload   # available from phase 1
-uv run streamlit run src/rate_derivatives_pricer/ui/app.py   # available from phase 1
+uv run uvicorn rate_derivatives_pricer.api.main:app --reload   # API on http://localhost:8000
+uv run streamlit run src/rate_derivatives_pricer/ui/app.py   # dashboard (needs the API running)
 docker compose up
 ```
 
