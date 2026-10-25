@@ -62,11 +62,16 @@ select = [
     "T20",     # no print(): logging only
 ]
 
+# Google style documents constructor arguments in the class docstring; dunder methods are
+# self-explanatory.
+ignore = ["D105", "D107"]
+
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["D"]
+# `import QuantLib as ql` is the universal QuantLib idiom.
+"tests/**" = ["D", "N813"]
 
 # --------------------------------------------------------------------------- mypy
 [tool.mypy]
@@ -101,6 +106,8 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = ["--strict-markers", "--strict-config", "--import-mode=importlib"]
+# Repository root on sys.path so that tests can share helpers (tests.validation.tolerances).
+pythonpath = ["."]
 markers = [
     "validation: comparison against QuantLib (reference oracle)",
 ]
