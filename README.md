@@ -96,6 +96,7 @@ Avec Docker (phase 4) : `docker compose up`.
 | `docs/CONVENTIONS.md` | Code, tests, tolérances, CI |
 | `docs/API.md` | Contrat HTTP, erreurs, logs |
 | `docs/DECISIONS.md` | Journal des décisions |
+| `docs/PHASE1.md` | Guide pédagogique de la phase 1 : chaque fichier et son rôle |
 
 ## Langue
 
