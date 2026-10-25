@@ -3,8 +3,9 @@
 Un **pricer de dérivés de taux** extensible, de type production, en Python : bibliothèque quant en POO,
 service FastAPI, SDK Python et dashboard Streamlit.
 
-> Statut : **Phase 0 terminée** (outillage, CI, logging). **Phase 1 implémentée** (swap OIS €STR de bout en bout :
-> cotations -> courbe -> PV -> API -> SDK -> dashboard, validé contre QuantLib), en revue. Voir `docs/ROADMAP.md`.
+> Statut : **Phase 0 terminée** (outillage, CI, logging). **Phase 1 terminée** (swap OIS €STR de bout en bout :
+> cotations -> courbe -> PV -> API -> SDK -> dashboard, validé contre QuantLib). **Phase 2 à venir** (IRS vanille,
+> multi-courbes, risque de base). Voir `docs/ROADMAP.md`.
 >
 > Les données de marché fournies (`data/market/EUR_2026-10-19.json`) sont **synthétiques** (ADR-023).
 

@@ -34,10 +34,10 @@ Une phase = une branche = une PR. La CI doit passer avant la fusion ;
 - **Protection de branche** GitHub activée sur `main` (CI obligatoire avant fusion). C'est un réglage du dépôt,
   pas du code : il n'apparaît pas dans l'historique git (*Settings -> Rules*).
 
-## Phase 1 : tranche verticale, valorisation d'un swap OIS — IMPLÉMENTÉE (PR en revue)
+## Phase 1 : tranche verticale, valorisation d'un swap OIS — TERMINÉE
 
-> Branche `phase-1-ois-vertical-slice`. Conventions validées avant implémentation (ADR-019, ADR-020). Décisions de la
-> phase : ADR-019 à ADR-026. La phase sera marquée TERMINÉE après fusion dans `main` avec la CI verte.
+> Fusionnée dans `main` (PR #3, branche `phase-1-ois-vertical-slice`). CI verte sur la PR. Conventions validées avant
+> implémentation (ADR-019, ADR-020) ; décisions de la phase : ADR-019 à ADR-026. Prochaine phase : la phase 2.
 
 **Cœur**
 - `TargetCalendar`, `Act360`, `Act365Fixed`, `Thirty360`, business day conventions, `Tenor`, `CurrencyConventions` (EUR).
@@ -62,7 +62,7 @@ Une phase = une branche = une PR. La CI doit passer avant la fusion ;
 - Un swap au par rate a un PV nul (test de propriété, tolérance 1e-10).
 - Couverture de `core/` >= 90 %.
 
-**Bilan de vérification** (local, Windows ; la CI rejoue la même boucle sous Linux)
+**Bilan de vérification** (en local sous Windows et sur la CI GitHub sous Linux)
 - Boucle `ruff check`, `ruff format --check`, `mypy` (strict sur `core/` et `services/`), `lint-imports` (5 contrats)
   et `pytest` : **265 tests verts**, dont 75 de validation QuantLib.
 - Calendrier TARGET (1995-2060), `adjust`/`advance`/fin de mois, day counts, échéanciers (fréquences x règles x fin
