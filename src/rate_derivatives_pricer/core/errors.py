@@ -58,6 +58,10 @@ class UnsupportedInstrumentError(RatesPricerError):
     """No factory or pricing engine is registered for the requested instrument type."""
 
 
+class UnsupportedRiskMeasureError(UnsupportedInstrumentError):
+    """No risk measure is registered under the requested name."""
+
+
 class PricingError(RatesPricerError):
     """Pricing failed for a reason other than invalid inputs."""
 

@@ -7,6 +7,7 @@
 | ``INTERPOLATORS`` | ``"log_linear_df"``                   | :class:`Interpolator` subclass |
 | ``INSTRUMENTS``   | ``"ois_swap"``                        | instrument factory             |
 | ``ENGINES``       | ``("ois_swap", "discounting")``       | :class:`PricingEngine` subclass |
+| ``RISK_MEASURES`` | ``"key_rate_dv01"``                   | :class:`RiskMeasure` subclass  |
 | ``CONVENTIONS``   | ``"EUR"``                             | :class:`CurrencyConventions`   |
 
 Built-in components are imported lazily by :func:`load_builtin_components` on the first lookup.
@@ -19,7 +20,11 @@ from datetime import date
 from threading import RLock
 from typing import TYPE_CHECKING, Any
 
-from rate_derivatives_pricer.core.errors import ConventionError, UnsupportedInstrumentError
+from rate_derivatives_pricer.core.errors import (
+    ConventionError,
+    UnsupportedInstrumentError,
+    UnsupportedRiskMeasureError,
+)
 from rate_derivatives_pricer.core.registry.base import Registry
 
 if TYPE_CHECKING:
@@ -29,6 +34,7 @@ if TYPE_CHECKING:
     from rate_derivatives_pricer.core.engines.base import PricingEngine
     from rate_derivatives_pricer.core.instruments.swaps import Instrument
     from rate_derivatives_pricer.core.market.interpolation import Interpolator
+    from rate_derivatives_pricer.core.risk.measures import RiskMeasure
 
 
 _builtins_lock = RLock()
@@ -52,13 +58,14 @@ def load_builtin_components() -> None:
             from rate_derivatives_pricer.core.engines import discounting
             from rate_derivatives_pricer.core.instruments import factories
             from rate_derivatives_pricer.core.market import interpolation
+            from rate_derivatives_pricer.core.risk import measures
 
             # Currency conventions are configuration files, not classes: load them explicitly.
             currency.register_conventions_from_package_data()
         except BaseException:
             _builtins_loaded = False
             raise
-        del calendar, day_count, discounting, factories, interpolation
+        del calendar, day_count, discounting, factories, interpolation, measures
 
 
 CALENDARS: Registry[str, type[Calendar]] = Registry(
@@ -79,6 +86,9 @@ INSTRUMENTS: Registry[str, InstrumentFactory] = Registry(
 ENGINES: Registry[tuple[str, str], type[PricingEngine]] = Registry(
     "pricing engine", UnsupportedInstrumentError, load_builtin_components
 )
+RISK_MEASURES: Registry[str, type[RiskMeasure]] = Registry(
+    "risk measure", UnsupportedRiskMeasureError, load_builtin_components
+)
 CONVENTIONS: Registry[str, CurrencyConventions] = Registry(
     "currency", ConventionError, load_builtin_components
 )
@@ -90,6 +100,7 @@ __all__ = [
     "ENGINES",
     "INSTRUMENTS",
     "INTERPOLATORS",
+    "RISK_MEASURES",
     "Registry",
     "load_builtin_components",
 ]
