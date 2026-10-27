@@ -508,3 +508,123 @@ Statuts : Acceptée, Remplacée, Reportée.
       PV/notionnel **2,6e-13**, par rate **3,0e-11** relatif, annuité **1,0e-13** relatif ; échéanciers à égalité
       exacte ; critère 1e-8.
 - **Conséquences :** `uv run pytest -m validation` couvre désormais l'EUR et l'USD.
+
+### ADR-037 : Ring buffer de logs et `GET /v1/logs/{request_id}`
+- **Statut :** Acceptée (27/10/2026, précise ADR-012)
+- **Contexte :** La phase 4 exige qu'on reconstruise, à partir d'un `request_id`, la chronologie complète d'un calcul,
+  sans accès au collecteur de logs (support de premier niveau, dashboard).
+- **Décision :**
+  - Un `LogRingBuffer` (handler `logging`, `api/log_buffer.py`) garde les `LOG_BUFFER_SIZE` derniers événements
+    (10 000 par défaut, les plus anciens sont évincés) sous forme de dictionnaires JSON, avec **les mêmes champs** que
+    les logs JSON de stdout (fonction partagée `record_payload`). La recherche par `request_id` est un parcours
+    linéaire du buffer (pas d'index : pas d'optimisation prématurée, quelques millisecondes pour 10 000 événements).
+  - Le buffer est attaché au logger racine pendant le *lifespan* de l'application et détaché à l'arrêt : deux
+    applications successives (tests) n'empilent jamais de handlers.
+  - Niveau propre `LOG_BUFFER_LEVEL` (`INFO` par défaut) : le handler de stdout reçoit désormais son propre niveau, de
+    sorte qu'un buffer en `DEBUG` (détail par pilier et par bump) ne rend pas stdout plus bavard. Un key-rate produit
+    quelques centaines d'événements `INFO` ; en `DEBUG`, plusieurs milliers.
+  - **Pas de stack trace** dans le buffer : l'endpoint est accessible à tout client (pas d'authentification en v1) et
+    une trace ne doit jamais lui parvenir (docs/API.md section 5). Seul le type d'exception est gardé ; la trace
+    complète reste sur stdout. Les valeurs non JSON (NaN d'un par rate indéfini, dates) deviennent du texte.
+  - Le middleware ajoute un événement `request_started` : chaque chronologie est encadrée par
+    `request_started` / `request_completed`. Les trades refusés d'un batch sont journalisés
+    (`batch_trade_rejected`, `batch_trade_failed`), y compris ceux refusés par validation de schéma dans la route.
+  - Un `request_id` sans événement en mémoire (inconnu, évincé, ou traité par un autre worker) donne `404 NOT_FOUND`.
+- **Conséquences :** Le buffer est **par process** et volatil, comme le cache (ADR-005) : avec plusieurs workers, la
+  chronologie n'est visible que sur le worker qui a traité la requête ; l'image lance donc un seul worker. Les logs
+  JSON de stdout restent la source durable (`docker compose logs api | grep <request_id>`).
+
+### ADR-038 : Métriques Prometheus et endpoints du cache
+- **Statut :** Acceptée (27/10/2026)
+- **Décision :**
+  - Bibliothèque `prometheus-client` (extra `api`) plutôt qu'une exposition écrite à la main : format texte standard,
+    histogrammes corrects, et c'est ce qu'on trouve en production.
+  - Un `CollectorRegistry` **propre à chaque application** (`ApiMetrics`, `app.state.metrics`) plutôt que le registre
+    global de la bibliothèque : pas d'état global (règle 11 de CLAUDE.md), et des tests indépendants.
+  - Métriques HTTP labellisées par **gabarit de route** (`/v1/logs/{request_id}`), `unmatched` pour une route
+    inconnue : jamais par chemin brut, dont la cardinalité serait illimitée. Erreurs comptées par code stable ;
+    trades d'un batch par issue. Les compteurs du cache sont lus dans le cache au moment du scrape (collecteur
+    personnalisé) : le cache reste la seule source de vérité, et ses compteurs repartent de zéro après
+    `DELETE /v1/cache` (Prometheus traite une remise à zéro de compteur comme un redémarrage).
+  - `GET /v1/cache/stats` (avec `hit_ratio`) et `DELETE /v1/cache` (renvoie `entries_dropped`). `CurveCache.clear`
+    renvoie désormais le nombre d'entrées supprimées.
+  - `/metrics` est hors `/v1` et hors enveloppe (convention Prometheus), comme `/health` et `/ready`.
+- **Conséquences :** Métriques par process (un worker par conteneur) ; un déploiement à plusieurs workers devra
+  passer par le mode multiprocess de `prometheus-client`.
+
+### ADR-039 : SDK de production (retries, timeouts, version)
+- **Statut :** Acceptée (27/10/2026, précise ADR-021)
+- **Décision :**
+  - **Retries** avec backoff exponentiel (`max_retries=2`, `backoff_seconds=0.5`, doublé à chaque tentative),
+    uniquement sur ce qui peut réussir au second essai : échec de connexion (`ConnectError`, `ConnectTimeout`,
+    `RemoteProtocolError`) et statuts `502`/`503`/`504`. Un timeout de lecture n'est **pas** rejoué : le serveur
+    calcule peut-être encore, et un key-rate 30 ans rejoué doublerait la charge. Les autres erreurs (4xx, 500) sont
+    définitives. Tous les endpoints sont sans état : rejouer un `POST` est sans effet de bord.
+  - Le SDK **génère le `request_id`** quand l'appelant n'en donne pas, et le garde pour toutes les tentatives : les
+    logs serveur des tentatives d'un même appel sont corrélés, et une erreur de connexion porte un id à communiquer.
+  - **Version** : `check_version()` compare la version du SDK à celle de `/v1/version` selon le versionnage
+    sémantique : même majeure, et même mineure tant que la majeure vaut 0 (développement initial). Option
+    `verify_version=True` pour échouer dès la construction du client. Exception `IncompatibleApiVersionError`
+    (code `INCOMPATIBLE_VERSION`, sans statut HTTP).
+  - `timeout` accepte un nombre ou un `httpx.Timeout` ; la fonction d'attente est injectable (tests sans délai).
+- **Conséquences :** Avec les valeurs par défaut, une API injoignable est signalée après ~1,5 s d'attentes ; le
+  dashboard garde ces valeurs.
+
+### ADR-040 : Pricing batch avec résultats partiels
+- **Statut :** Acceptée (27/10/2026)
+- **Contexte :** Critère de la phase 4 : un lot de 100 trades est pricé avec une gestion d'erreur par trade.
+- **Décision :**
+  - `POST /v1/batch/price` : un marché, de 1 à 1 000 trades (`BATCH_MAX_TRADES`, borne de mémoire et de latence d'une
+    requête synchrone). Le marché est résolu et bootstrapé **une fois** (cache de courbes) ; chaque trade passe par le
+    même chemin que `/v1/price` (`_price_trade`), donc les mêmes nombres au bit près et la même empreinte.
+  - **Frontière d'erreur** : tout ce qui ne dépend que d'un trade (type inconnu, paramètres invalides au sens du schéma,
+    devise d'un autre marché, échéancier invalide, fixings manquants, exception inattendue) devient l'erreur de ce
+    trade, avec le **même code** qu'en requête unitaire ; tout ce qui est commun (marché, calibration, corps de
+    requête mal formé, `id` en double) fait échouer la requête entière. Une exception inattendue d'un trade est
+    journalisée avec sa trace (`batch_trade_failed`) et renvoyée comme `INTERNAL_ERROR` générique.
+  - Les paramètres sont validés **par trade** dans la route (et non par le schéma de la requête) : une faute de frappe
+    dans un trade ne doit pas rejeter les 99 autres.
+  - Réponse `200` même si des trades échouent (le statut est porté par trade, et `summary.failed`), plutôt que `207` :
+    un client lit toujours `results`, et un code de succès partiel compliquerait le SDK et les proxys.
+  - Un `calculation_audit` par batch (empreinte du marché, empreintes des trades par `trade_id`, comptes) ; un
+    événement par trade (`batch_trade_priced` avec le PV, ou `batch_trade_rejected`).
+- **Conséquences :** Le batch est synchrone ; au-delà de quelques milliers de trades, une file de tâches (hors v1,
+  ADR-016) serait nécessaire. Le batch ne fait que le pricing (pas de risque).
+
+### ADR-041 : Images Docker, Compose et smoke test en CI
+- **Statut :** Acceptée (27/10/2026)
+- **Décision :**
+  - Deux images (`Dockerfile.api`, `Dockerfile.ui`) en **build multi-étapes** sur `python:3.12-slim` : l'étape de
+    build installe l'environnement exact de `uv.lock` (`uv sync --locked --no-dev --extra api|ui --no-editable`,
+    dépendances d'abord pour profiter du cache de couches) ; l'image d'exécution ne contient que le venv (ni `uv`, ni
+    sources, ni outils de dev, ni QuantLib), tourne sous un **utilisateur non root** et déclare un `HEALTHCHECK`
+    (`/ready` pour l'API, `/_stcore/health` pour Streamlit) avec la bibliothèque standard (pas de `curl` dans l'image).
+  - `uv` est épinglé (`ghcr.io/astral-sh/uv:0.13.5`, la version utilisée en local) : un `uv.lock` doit être lu par la
+    version qui l'a produit.
+  - L'API tourne avec **un worker** uvicorn (cache, buffer de logs et métriques par process, ADR-005, ADR-037) et sans
+    le log d'accès d'uvicorn (doublon de `request_completed`, sans `request_id`). Logs JSON sur stdout.
+  - Les snapshots de `data/market` sont copiés dans l'image (`MARKET_DATA_DIR=/app/data/market`) ; un volume pourra
+    les remplacer sans reconstruire. Le commit est passé en argument de build (`GIT_COMMIT`, `/v1/version`).
+  - `docker-compose.yml` : `ui` attend que `api` soit *healthy* ; `docker compose up` suffit.
+  - CI : job `Docker smoke test` **en parallèle** du job de qualité : build, `docker compose up -d --wait`,
+    `scripts/smoke_test.py` (bibliothèque standard uniquement : santé, pricing, chronologie par `request_id`, batch avec
+    un trade invalide, cache, métriques, dashboard), logs des conteneurs, arrêt.
+- **Conséquences :** Pour que le smoke test bloque la fusion, le check « Docker smoke test » doit être ajouté aux
+  checks obligatoires de la protection de branche (réglage GitHub, *Settings -> Rules*). Docker n'étant pas disponible
+  sur le poste de développement, les images ne sont construites qu'en CI ; le script de smoke test a été vérifié en
+  local contre un uvicorn.
+
+### ADR-042 : Contrat HTTP et dashboard de la phase 4
+- **Statut :** Acceptée (27/10/2026, précise ADR-011, ADR-025, ADR-030 et ADR-035)
+- **Décision :**
+  - Changements **additifs** uniquement, aucun ne rompt `/v1` : `POST /v1/batch/price`, `GET /v1/cache/stats`,
+    `DELETE /v1/cache`, `GET /v1/logs/{request_id}` (enveloppe habituelle) et `GET /metrics` (texte Prometheus).
+    Nouvelles variables d'environnement `LOG_BUFFER_SIZE` et `LOG_BUFFER_LEVEL`.
+  - Le SDK génère désormais le `request_id` quand l'appelant n'en donne pas (ADR-039) ; côté serveur rien ne change.
+  - Dashboard : onglet **Diagnostic** (tableau et timings des 20 derniers appels de la session, statistiques et vidage
+    du cache, chronologie des logs d'un `request_id` en figure et en tableau, écarts contre QuantLib).
+  - Les **écarts contre QuantLib** sont un rapport statique (`ui/data/quantlib_validation.json`) des écarts maximaux
+    mesurés par la suite de validation (ADR-024, ADR-031, ADR-033, ADR-036) : QuantLib est une dépendance de test
+    (ADR-003) et n'est jamais installée avec l'API ni le dashboard. Un test vérifie que les tolérances affichées sont
+    celles de `tests/validation/tolerances.py` et que chaque écart est sous sa tolérance.
+- **Conséquences :** Une rupture de ce contrat casse `tests/api/test_phase4.py` et les tests du SDK et du dashboard.

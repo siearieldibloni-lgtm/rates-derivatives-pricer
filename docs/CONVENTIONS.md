@@ -74,7 +74,9 @@ On compare **couche par couche**, pour pouvoir localiser l'origine d'un écart d
 3. `mypy`
 4. `lint-imports`
 5. `pytest` avec rapport de couverture
-6. Build Docker + smoke test (à partir de la phase 4)
+6. Build Docker + smoke test (job `Docker smoke test`, en parallèle des étapes 1 à 5) : `docker compose build`,
+   `docker compose up -d --wait` (attend les `HEALTHCHECK` des deux images), `scripts/smoke_test.py`, logs des
+   conteneurs, `docker compose down`
 7. Publication de la couverture en artefact
 
 Un job qui échoue bloque la fusion : la **protection de branche** de `main` est activée dans GitHub
@@ -87,5 +89,17 @@ s'activent **une fois par clone** avec `uv run pre-commit install` (le dossier `
 
 ## 7. Configuration
 
-Variables d'environnement via `pydantic-settings` : `LOG_LEVEL`, `LOG_FORMAT` (`json` en conteneur, texte lisible
-en local), taille du cache, dossier de données.
+Variables d'environnement via `pydantic-settings` (API) :
+
+| Variable | Défaut | Rôle |
+|---|---|---|
+| `LOG_LEVEL` | `INFO` | Niveau des logs sur stdout |
+| `LOG_FORMAT` | `json` | `json` en conteneur, `text` lisible en local |
+| `MARKET_DATA_DIR` | `data/market` | Dossier des snapshots (`/app/data/market` dans l'image) |
+| `CURVE_CACHE_SIZE` | `32` | Nombre maximal d'environnements de marché en cache |
+| `CURVE_CACHE_TTL_SECONDS` | aucun | Durée de vie d'une entrée du cache |
+| `LOG_BUFFER_SIZE` | `10000` | Événements gardés en mémoire pour `/v1/logs/{request_id}` |
+| `LOG_BUFFER_LEVEL` | `INFO` | Niveau minimal gardé en mémoire (indépendant de `LOG_LEVEL`) |
+| `GIT_COMMIT` | `unknown` | Commit déployé (`/v1/version`, `pricer_build_info`) ; argument de build de l'image |
+
+Le dashboard lit `PRICER_API_URL` (`http://localhost:8000` par défaut, `http://api:8000` dans Compose).

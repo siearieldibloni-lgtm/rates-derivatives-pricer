@@ -173,7 +173,7 @@ Traduites en codes HTTP dans `docs/API.md`.
 rate-derivatives-pricer/
 ├── CLAUDE.md  README.md  pyproject.toml  uv.lock  .pre-commit-config.yaml
 ├── .gitignore  .gitattributes  .python-version
-├── Dockerfile.api  Dockerfile.ui  docker-compose.yml      (phase 4)
+├── Dockerfile.api  Dockerfile.ui  docker-compose.yml  .dockerignore   (phase 4)
 ├── .github/workflows/ci.yml
 ├── docs/   (ARCHITECTURE, ROADMAP, CONVENTIONS, API, DECISIONS)
 ├── data/   market/ (snapshots CSV/JSON)   trades/ (swaps d'exemple JSON)
@@ -184,8 +184,9 @@ rate-derivatives-pricer/
 │   │   ├── instruments/ (cashflows, legs, swaps)
 │   │   ├── engines/  registry/  errors.py
 │   │   ├── risk/ (bumps, measures, engine, scenarios, carry, data/scenarios.json)
-│   ├── services/  sdk/  ui/
-│   └── api/   (logging_config.py : configuration du logging et request_id, en place depuis la phase 0)
+│   ├── services/  sdk/  ui/ (app.py, views.py, data/quantlib_validation.json)
+│   └── api/   (main, routes, schemas, errors, middleware, settings, logging_config, log_buffer, metrics)
+├── scripts/smoke_test.py   (smoke test d'une plateforme démarrée, bibliothèque standard uniquement)
 └── tests/  unit/  integration/  validation/  api/  fixtures/
 ```
 
@@ -199,7 +200,24 @@ Un seul `pyproject.toml`, un seul package racine. Les dépendances sont réparti
 
 Dataclasses dans `core` ; Pydantic uniquement dans `api`/`sdk`. Voir ADR-018.
 
-## 13. Patterns de conception à savoir nommer en entretien
+## 13. Exploitation (phase 4)
+
+| Composant | Rôle | Fichier |
+|---|---|---|
+| `RequestContextMiddleware` | `request_id`, `request_started` / `request_completed`, métriques HTTP, erreurs inattendues | `api/middleware.py` |
+| `LogRingBuffer` | Handler `logging` borné, attaché à la racine pendant le *lifespan* de l'application ; lu par `GET /v1/logs/{request_id}` | `api/log_buffer.py` |
+| `ApiMetrics` | Compteurs et histogrammes Prometheus dans un `CollectorRegistry` **propre à l'application** (pas de registre global) ; le cache est lu au moment du scrape | `api/metrics.py` |
+| `PricerService.price_batch` | Un marché, plusieurs trades, une erreur par trade (`BatchOutcome`) | `services/pricer_service.py` |
+| Images | Build multi-étapes `uv sync --locked --no-dev --no-editable`, image d'exécution sans `uv` ni sources, utilisateur non root, `HEALTHCHECK` | `Dockerfile.api`, `Dockerfile.ui` |
+
+```
+navigateur -> ui (Streamlit, :8501) -> sdk -> HTTP -> api (uvicorn, :8000, 1 worker)
+                                                        ├── stdout : logs JSON (collecteur)
+                                                        ├── /metrics : Prometheus
+                                                        └── /v1/logs/{request_id} : ring buffer
+```
+
+## 14. Patterns de conception à savoir nommer en entretien
 
 Strategy (interpolateurs, solveurs, moteurs), Factory + Registry (Open/Closed), composition plutôt qu'héritage
 (jambes, cashflows), interfaces (ABC/Protocol), DTO + Mapper (API vs domaine), objets valeur immuables,

@@ -190,6 +190,56 @@ Un snapshot USD (`USD_2026-10-19`) contient un dépôt ON SOFR et des OIS SOFR ;
 `"currency": "USD"`. Conventions : ADR-032 (calendrier `US_SOFR`, payment lag 2 jours). Il n'y a pas d'indice Ibor en
 USD : un `vanilla_irs` USD est refusé (`INVALID_TRADE_DEFINITION`).
 
+### 3.6 Pricing batch : `POST /v1/batch/price` (phase 4)
+
+```
+POST /v1/batch/price
+{
+  "market":  { "snapshot": "EUR_2026-10-19" },
+  "trades":  [ { "id": "OIS-5Y", "type": "ois_swap", "params": { ... } },
+               { "type": "vanilla_irs", "params": { ... } } ],
+  "options": { "interpolation": "log_linear_df" }
+}
+```
+
+- Plusieurs trades sur **un même marché** : la courbe est construite une fois (cache de courbes), puis chaque trade
+  est pricé comme par `/v1/price` (mêmes nombres au bit près, même empreinte de trade).
+- `id` (optionnel, 1 à 128 caractères) est renvoyé avec le résultat du trade ; à défaut, sa position (`"0"`, `"1"`...).
+  Des `id` en double sont refusés (`VALIDATION_ERROR`). De 1 à **1 000 trades** par requête (`BATCH_MAX_TRADES`).
+- **Résultats partiels** (ADR-040) : un trade invalide (type inconnu, paramètres invalides, devise d'un autre marché,
+  fixings manquants, erreur inattendue) n'échoue que pour lui-même ; la réponse est un `200`. Seule une erreur commune
+  à tous les trades (marché introuvable ou invalide, calibration impossible, requête mal formée) fait échouer la
+  requête entière, avec le code habituel.
+- Le résultat contient `valuation_date`, `currency`, `summary` (`trade_count`, `succeeded`, `failed`,
+  `total_present_value` des trades pricés) et `results`, dans l'ordre de la requête : `trade_id`, `status`
+  (`"ok"` | `"error"`), `result` (comme `/v1/price`) **ou** `error` (`code`, `message`, `details`, les mêmes que pour
+  une requête unitaire ; `INTERNAL_ERROR` sans détail pour une erreur inattendue), `trade_hash` et `duration_ms`.
+- `diagnostics.warnings` regroupe les avertissements des trades, préfixés par leur `trade_id`.
+
+### 3.7 Exploitation : cache, logs, métriques (phase 4)
+
+| Route | Résultat |
+|---|---|
+| `GET /v1/cache/stats` | `hits`, `misses`, `evictions`, `size`, `max_size`, `ttl_seconds`, `hit_ratio` (`null` avant toute recherche) |
+| `DELETE /v1/cache` | `entries_dropped` ; les compteurs repartent de zéro |
+| `GET /v1/logs/{request_id}` | `request_id`, `event_count`, `duration_ms` (premier au dernier événement), `events` (champs des logs JSON, section 7.1), `buffer` (`size`, `capacity`, `evicted`) ; `404 NOT_FOUND` si aucun événement n'est en mémoire |
+| `GET /metrics` | Format texte Prometheus (hors enveloppe) |
+
+Ces informations sont **par process** (ADR-005, ADR-037) : avec plusieurs workers, chacun a son cache, son buffer de
+logs et ses métriques. Le conteneur lance un seul worker.
+
+Métriques exposées (ADR-038) :
+
+| Métrique | Type | Labels |
+|---|---|---|
+| `pricer_http_requests_total` | compteur | `method`, `route` (gabarit de route, `unmatched` sinon), `status` |
+| `pricer_http_request_duration_seconds` | histogramme (5 ms à 30 s) | `method`, `route` |
+| `pricer_errors_total` | compteur | `code` (codes stables de la section 5) |
+| `pricer_batch_trades_total` | compteur | `outcome` (`ok` ou code d'erreur) |
+| `pricer_curve_cache_hits_total`, `_misses_total`, `_evictions_total` | compteurs | - |
+| `pricer_curve_cache_size`, `pricer_curve_cache_max_size` | jauges | - |
+| `pricer_build_info` | info | `version`, `commit` |
+
 ## 4. Enveloppe de réponse
 
 ```
@@ -295,8 +345,18 @@ du cœur, options, PV et métriques clés, durée totale. Cet enregistrement per
 
 ### 7.5 Visibilité (phase 4)
 
-- L'onglet Diagnostic affiche les `diagnostics` de chaque réponse.
-- `GET /v1/logs/{request_id}` renvoie la chronologie d'événements depuis un **ring buffer** borné en mémoire.
+- L'onglet Diagnostic affiche les `diagnostics` des derniers appels du dashboard, les statistiques du cache, la
+  chronologie des logs d'un `request_id` et les écarts mesurés contre QuantLib.
+- `GET /v1/logs/{request_id}` renvoie la chronologie d'événements depuis un **ring buffer** borné en mémoire
+  (ADR-037) : un handler `logging` attaché à la racine pendant la vie de l'application, qui garde les `LOG_BUFFER_SIZE`
+  derniers événements (10 000 par défaut) de niveau `LOG_BUFFER_LEVEL` ou plus (`INFO` par défaut ; `DEBUG` ajoute le
+  détail par pilier et par bump, au prix d'une rotation plus rapide). Le niveau de stdout ne change pas.
+- Chaque requête est encadrée par `request_started` et `request_completed` (middleware) ; entre les deux, les
+  événements de `core` (bootstrap, pricing, risque), de `services` (cache, `calculation_audit`, trades d'un batch) et
+  de l'API. La chronologie d'un pricing : `request_started`, `curve_build_completed` (une par courbe),
+  `curves_build_completed`, `curve_cache_miss`, `pricing_completed`, `calculation_audit`, `request_completed`.
+- Les événements du buffer **ne contiennent pas de stack trace** (l'endpoint est accessible à tout client) : seulement
+  le type d'exception (`exception`). La trace complète reste sur stdout.
 - La structure de logs JSON existe dès la **phase 1** ; le ring buffer arrive en phase 4.
 
 ## 8. SDK
@@ -319,7 +379,18 @@ risk   = client.risk(market=..., trade=..., measures=["key_rate_dv01"])
 - Phase 3 : `PricerClient.scenarios(market, trade, scenarios=(), custom_scenarios=(), options=None)`,
   `PricerClient.carry_rolldown(market, trade, horizon="3M", options=None)`, le constructeur
   `scenario(name, {"2Y": 0.0, "10Y": 30.0}, curves=None)` et l'exception `UnsupportedScenarioError`.
-- Timeouts et retries configurables ; version du SDK vérifiée contre `/v1/version`.
+- Phase 4 (ADR-039) : `PricerClient.batch_price(market, trades, trade_ids=None, options=None)`, `cache_stats()`,
+  `clear_cache()`, `logs(request_id)`, `metrics()`, `check_version()` et l'exception `IncompatibleApiVersionError`
+  (code `INCOMPATIBLE_VERSION`).
+- **Timeouts** : `timeout` en secondes ou `httpx.Timeout` (30 s par défaut).
+- **Retries** : `max_retries` (2 par défaut) avec backoff exponentiel (`backoff_seconds`, 0,5 s puis 1 s...), sur
+  échec de connexion (`ConnectError`, `ConnectTimeout`, `RemoteProtocolError`) et sur `502`/`503`/`504` uniquement.
+  Un timeout de lecture n'est pas rejoué (le serveur calcule peut-être encore) ; les autres erreurs sont définitives.
+  Tous les endpoints sont sans état, un retry est donc sans effet de bord.
+- **`request_id`** : généré par le SDK s'il n'est pas fourni et **identique pour toutes les tentatives** ; une erreur
+  de connexion porte donc aussi un `request_id` à communiquer au support.
+- **Version** : `check_version()` (ou `PricerClient(..., verify_version=True)`) refuse une API de version majeure
+  différente (et, tant que la majeure vaut 0, de version mineure différente).
 - Le SDK sert aussi de test d'intégration vivant : Streamlit l'utilise, donc toute rupture de contrat se voit immédiatement.
 
 ## 9. Hors v1 (consigné, pas oublié)
