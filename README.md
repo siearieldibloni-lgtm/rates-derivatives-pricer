@@ -4,8 +4,10 @@ Un **pricer de dérivés de taux** extensible, de type production, en Python : b
 service FastAPI, SDK Python et dashboard Streamlit.
 
 > Statut : **Phase 0 terminée** (outillage, CI, logging). **Phase 1 terminée** (swap OIS €STR de bout en bout :
-> cotations -> courbe -> PV -> API -> SDK -> dashboard, validé contre QuantLib). **Phase 2 à venir** (IRS vanille,
-> multi-courbes, risque de base). Voir `docs/ROADMAP.md`.
+> cotations -> courbe -> PV -> API -> SDK -> dashboard, validé contre QuantLib). **Phase 2 implémentée** (IRS vanille
+> contre Euribor 3M/6M, bootstrap multi-courbes, risque par bump-and-reprice : DV01 parallèle, par bucket, par courbe,
+> convexité ; validée contre QuantLib, en attente de fusion). **Phase 3 à venir** (scénarios, carry/roll-down, USD).
+> Voir `docs/ROADMAP.md`.
 >
 > Les données de marché fournies (`data/market/EUR_2026-10-19.json`) sont **synthétiques** (ADR-023).
 
@@ -18,7 +20,8 @@ service FastAPI, SDK Python et dashboard Streamlit.
 
 ## Périmètre de la v1
 
-- Produits : swaps OIS, IRS vanilles. Devise : EUR (USD par configuration en phase 3).
+- Produits : swaps OIS, IRS vanilles (Euribor 3M/6M, multi-courbes). Devise : EUR (USD par configuration en phase 3).
+- Risque : bump-and-reprice sur les instruments de calibration (par rates), avec re-bootstrap.
 - Python + NumPy pur. QuantLib utilisée uniquement comme oracle de validation dans les tests.
 - API sans état avec cache de courbes en mémoire.
 
@@ -64,6 +67,22 @@ from rate_derivatives_pricer.sdk import PricerClient, ois_swap
 with PricerClient("http://localhost:8000") as client:
     priced = client.price("EUR_2026-10-19", ois_swap(10_000_000, 0.0225, "pay_fixed", "5Y"))
     print(priced.result.present_value, priced.result.par_rate, priced.request_id)
+```
+
+Un IRS vanille contre Euribor 6M, puis son risque (DV01 parallèle, par instrument de calibration, par courbe,
+convexité) :
+
+```python
+from rate_derivatives_pricer.sdk import PricerClient, vanilla_irs
+
+with PricerClient("http://localhost:8000") as client:
+    swap = vanilla_irs(10_000_000, 0.025, "pay_fixed", "5Y", index="EURIBOR6M")
+    priced = client.price("EUR_2026-10-19", swap)
+    risk = client.risk(
+        "EUR_2026-10-19", swap, ["parallel_dv01", "key_rate_dv01", "curve_dv01", "convexity"]
+    )
+    for measure in risk.result.measures:
+        print(measure.measure, measure.value, measure.unit)
 ```
 
 Le cœur s'utilise aussi seul, par exemple dans un notebook :

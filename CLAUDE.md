@@ -25,9 +25,12 @@ Package : `rate_derivatives_pricer` (repo : `rate-derivatives-pricer`).
   couches (import-linter) et squelette de logging en place ; 21 tests verts.
 - **Phase 1 (tranche verticale, swap OIS €STR) : TERMINÉE et fusionnée** (PR #3). Cœur, service, API, SDK et
   dashboard en place ; 265 tests verts dont la validation QuantLib, couverture `core/` 99 %, CI verte.
-- **Phase courante : 2 (IRS vanille, multi-courbes, risque de base)**. Branche à créer :
-  `phase-2-irs-multicurve-risk`.
-- Conventions EUR dans `core/conventions/data/EUR.json` (ADR-019) ; fixings et composition overnight : ADR-020.
+- **Phase 2 (IRS vanille, multi-courbes, risque de base) : IMPLÉMENTÉE** sur la branche
+  `phase-2-irs-multicurve-risk` (PR à fusionner, puis clôture des docs comme en phase 1). IRS contre Euribor 3M/6M,
+  bootstrap multi-courbes, `/v1/risk` (DV01 parallèle / par bucket / par courbe, convexité) ; validée contre QuantLib.
+- **Phase courante : 2 jusqu'à la fusion de la PR, puis 3 (risque avancé)**.
+- Conventions EUR dans `core/conventions/data/EUR.json` (ADR-019, Euribor et IRS : ADR-027) ; fixings et composition
+  overnight : ADR-020 ; bootstrap multi-courbes : ADR-028 ; définitions du risque : ADR-029.
 - Logging : `rate_derivatives_pricer.api.logging_config` (`configure_logging`, `request_context`). Le cœur se
   contente de `logging.getLogger(__name__)` ; le middleware `api/middleware.py` positionne le `request_id`.
 - Tolérances de validation : uniquement dans `tests/validation/tolerances.py`.
@@ -43,6 +46,7 @@ Package : `rate_derivatives_pricer` (repo : `rate-derivatives-pricer`).
   importée par `core/`.
 - API sans état, cache de courbes LRU en mémoire, pas de base de données, pas d'authentification en v1.
 - Risque par *bump-and-reprice* sur les **instruments de calibration** (chocs sur les par rates + re-bootstrap).
+  Les instruments de calibration sont valorisés **sans fixings** (ADR-027).
 
 ## Architecture en une image
 

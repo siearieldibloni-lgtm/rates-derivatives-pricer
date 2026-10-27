@@ -261,3 +261,134 @@ Statuts : Acceptée, Remplacée, Reportée.
   entrée de cache.
 - **Conséquences :** Un PV différent avec une même empreinte d'entrée et une même version révèle un bug ; le cache
   reste par process (ADR-005).
+
+### ADR-027 : Conventions Euribor et IRS vanille EUR
+- **Statut :** Acceptée (27/10/2026, validées par le porteur du projet avant implémentation, règle 7 de CLAUDE.md)
+- **Contexte :** La phase 2 ajoute des coupons indexés sur Euribor et un IRS vanille. Ces conventions ne se devinent
+  pas ; elles doivent aussi coïncider avec QuantLib (`Euribor6M`, `Euribor3M`, `EuriborSwapIsdaFixA`) pour atteindre
+  les tolérances de validation.
+- **Décision :** Conventions décrites dans la section `ibor` de `core/conventions/data/EUR.json` (aucune codée en dur) :
+  - **Indices** `EURIBOR6M` (indice par défaut) et `EURIBOR3M` : fixing 2 jours ouvrés TARGET avant le début de la
+    période, Act/360, Modified Following, règle de fin de mois activée pour la période de l'indice.
+  - **IRS vanille** : jambe fixe annuelle en **30/360 Bond Basis** (ISDA 4.16(f), celle de `EuriborSwapIsdaFixA`) ;
+    jambe flottante à la fréquence de l'indice (6M ou 3M) en Act/360 ; Modified Following ; génération *backward* ; pas
+    de décalage de paiement ; règle de fin de mois **désactivée** (comme `MakeVanillaSwap`) ; date spot = date de
+    valorisation + 2 jours ouvrés ; maturité = départ + tenor, ajustée par l'échéancier.
+  - **Coupon Ibor** : taux projeté = forward simple `(P(début) / P(fin) - 1) / tau_indice` de la courbe de projection
+    de l'indice **sur la période d'accrual elle-même** (« par coupon », défaut de QuantLib), actualisé sur la courbe
+    €STR. Fixings : mêmes règles que l'overnight (ADR-020) — antérieur à la date de valorisation : obligatoire,
+    `MarketDataError` sinon ; du jour : utilisé s'il est fourni, projeté sinon.
+  - **Instruments de calibration** de chaque courbe Euribor : un dépôt Euribor (départ spot, échéance = tenor de
+    l'indice, Act/360, Modified Following, fin de mois) puis des IRS annuels 1Y à 10Y, 12Y, 15Y, 20Y, 25Y, 30Y contre
+    l'indice. Pas de 18M (stub), de FRA ni de basis swap (hors roadmap). Le **pilier** d'un IRS est sa dernière date de
+    paiement ; celui du dépôt, son échéance.
+  - **Les instruments de calibration sont valorisés sans fixings.** Un IRS spot a pour premier fixing celui de la date
+    de valorisation ; si l'environnement de calibration le voyait, ce premier coupon serait figé au lieu d'être projeté
+    et la courbe dépendrait d'un fixing publié, ce qu'une cotation ne dit pas. Le côté QuantLib des tests efface donc
+    les fixings avant de bootstrapper (QuantLib les stocke globalement par nom d'indice) et fige la courbe obtenue avant
+    de pricer (`freeze_log_linear`).
+- **Conséquences :** Un IRS contre Euribor 3M exige que le snapshot contienne les cotations de l'indice 3M. Changer une
+  convention revient à modifier le JSON et à rejouer la validation. Une devise sans section `ibor` (USD en phase 3, où
+  l'indice est overnight) reste valide ; les IRS y sont simplement refusés (`ConventionError`).
+
+### ADR-028 : Bootstrap multi-courbes et performance du bump-and-reprice
+- **Statut :** Acceptée (27/10/2026, complète ADR-022)
+- **Contexte :** Il faut une courbe de projection par indice, calibrée sur des instruments actualisés par la courbe
+  €STR. Le risque rejoue ce bootstrap pour chaque choc : un key-rate sur ~56 cotations coûte ~110 re-bootstraps. Le
+  premier jet prenait ~0,8 s par build, soit **43 s** pour le key-rate d'un IRS 5 ans, trop pour une réponse HTTP.
+- **Décision :**
+  - **Deux étapes** : (1) courbe €STR (dépôt + OIS), qui actualise tout et projette l'overnight ; (2) pour chaque indice
+    Ibor, une courbe calibrée sur ses dépôts et ses IRS, actualisés sur la courbe de l'étape 1. Les courbes Ibor sont
+    indépendantes entre elles (ordre alphabétique des indices dans le rapport). Même interpolateur et même solveur pour
+    toutes les courbes. Le rapport de calibration porte `index_name` et `is_discount_curve`.
+  - **Optimisations**, toutes **exactes** (résultats identiques au bit près, testés) et décidées après profilage :
+    1. *Projection Ibor en lot* : les facteurs d'actualisation de tous les coupons d'un indice sont lus en un seul appel
+       NumPy (`Cashflow.amounts`, hook vectorisable ; le défaut boucle sur `amount`).
+    2. *Année-fractions précalculées* par coupon et *cache du temps* des courbes, partagé entre les courbes candidates.
+    3. *Mémoïsation des piliers résolus* dans le `CurveBuilder` : la clé contient tout ce dont la solution dépend
+       (instrument, cotation, nœuds déjà résolus de la courbe et, pour un IRS, nœuds de la courbe d'actualisation
+       jusqu'au pilier plus le nœud qui l'encadre). Elle n'est valable que pour une interpolation *locale* (attribut
+       `Interpolator.local`) ; sinon tous les nœuds entrent dans la clé. Re-bootstrapper un snapshot choqué avec le même
+       constructeur ne résout que les piliers que le choc peut déplacer.
+    4. *Mémoïsation des instruments de calibration* (leurs échéanciers ne dépendent pas du taux coté) : le coût
+       dominant après 1-3 était la régénération de ~12 000 échéanciers.
+    5. *Troncature à l'horizon* : `build(snapshot, horizon=d)` s'arrête, pour chaque courbe, au premier pilier au moins
+       égal à `d`, la courbe €STR allant au moins aussi loin que les courbes Ibor. Les valeurs sont exactes jusqu'à
+       `d` et ne doivent pas être utilisées au-delà ; seul le pricer de risque l'utilise, avec la dernière date de flux
+       du trade (`Swap.last_cashflow_date`). Conséquence utile : un choc sur une cotation au-delà de l'horizon laisse
+       toutes les valeurs inchangées et donne un bucket **exactement nul**.
+  - `RiskEngine` mémorise en plus les valorisations par signature de snapshot (un choc parallèle sert au DV01 et à la
+    convexité). Le `CurveBuilder` est créé **par requête** `/v1/risk` : sa mémoire n'est pas partagée entre requêtes.
+- **Conséquences :** Mesuré en local (Windows, une requête) : build complet des 3 courbes ~0,3 s à chaud ; key-rate
+  d'un IRS 5 ans passé de 43 s à ~2,5 s. Un key-rate sur 30 ans reste le cas le plus lent (toutes les courbes
+  sont nécessaires). La différentiation automatique, hors v1, réduirait ce coût sans changer le contrat.
+
+### ADR-029 : Définitions des mesures de risque
+- **Statut :** Acceptée (27/10/2026, validées par le porteur du projet ; précise ADR-010)
+- **Contexte :** « DV01 » recouvre plusieurs définitions ; il faut les fixer, avec leur signe et leur unité, pour que
+  les chiffres soient comparables à ceux de QuantLib et entre mesures.
+- **Décision :**
+  - **Choc** : on décale de `h` bp le **taux coté** (par rate d'un OIS ou d'un IRS, taux d'un dépôt) des instruments
+    sélectionnés, puis on re-bootstrap et on revalorise (risque *par rates*, celui des desks). `h` vaut 1 bp par
+    défaut. Les cotations gardent leur unité d'origine.
+  - **DV01** = variation de PV pour **+1 bp**, en devise du trade par bp : un payeur de fixe a un DV01 positif. Schéma
+    par défaut : **différence centrée** `(PV(+h) - PV(-h)) / 2h` ; `up` : `(PV(+h) - PV) / h` ; `down` :
+    `(PV - PV(-h)) / h`. Quelle que soit `h`, le résultat est ramené par bp.
+  - **`parallel_dv01`** : toutes les cotations (tous les indices) ensemble.
+  - **`key_rate_dv01`** : un bucket par instrument de calibration (une cotation à la fois), triés par courbe (€STR
+    d'abord) puis par maturité ; `value` est la somme des buckets. Un bucket au-delà de l'horizon du trade est nul.
+  - **`curve_dv01`** : un bucket par courbe, `OIS` (cotations de dépôt et OIS) puis chaque indice Ibor. Choquer l'OIS
+    déplace la courbe d'actualisation **et** re-calibre les courbes Ibor, dont les par rates restent fixes ; choquer un
+    indice ne déplace que sa projection. La somme des courbes vaut le DV01 parallèle.
+  - **`convexity`** : dérivée seconde en bp² d'un choc parallèle, toujours par différence centrée
+    `(PV(+h) - 2 PV + PV(-h)) / h²`, de sorte que `PV(dx) ≈ PV + DV01 dx + convexity dx² / 2` (dx en bp).
+  - **Cohérence interne** : la somme des buckets (key-rate ou par courbe) égale le DV01 parallèle à la précision de la
+    différence centrée (écart mesuré 2,1e-7 relatif, tolérance 1e-6, `tests/validation/tolerances.py`).
+  - **Fixings** : un fixing connu ne bouge pas avec le marché. Le premier coupon d'un IRS spot (fixing du jour) ne
+    contribue donc pas au DV01 ; ce n'est pas une erreur, c'est ce que fait QuantLib.
+- **Conséquences :** Le risque est une fonction `pricer(instrument, snapshot) -> PV` : ajouter une mesure ne touche ni
+  `risk/` ni les moteurs (un test l'enregistre depuis `tests/`). Carry/roll-down et scénarios arrivent en phase 3.
+
+### ADR-030 : Contrat HTTP de la phase 2
+- **Statut :** Acceptée (27/10/2026, précise ADR-011 et ADR-025)
+- **Décision :** Changements additifs, aucun rompt `/v1` :
+  - `QuoteModel` accepte `ibor_deposit` et `ibor_swap` avec un champ `index` (obligatoire pour eux, interdit pour les
+    autres ; sinon `VALIDATION_ERROR`). Les réponses de snapshot portent `"index": null` pour les cotations €STR.
+  - `/v1/curves/build` renvoie une courbe par entrée de `curves` (€STR d'abord, `role: "discount_and_projection"`, puis
+    une `projection` par indice) ; un client qui lit `curves[0]` continue de voir la courbe €STR.
+  - `ois_swap` et `vanilla_irs` (paramètre `index`) sont les types de trade ; `/v1/catalog` publie `ibor_indices` par
+    devise, `risk_measures` depuis le registre, et le schéma JSON de chaque type.
+  - `POST /v1/risk` (`measures`, `bump.size_bp`, `bump.mode`), enveloppe et diagnostics habituels (`curve_cache` à
+    `null` : les courbes choquées ne passent pas par le cache).
+  - Mesure inconnue : `400 UNSUPPORTED_RISK_MEASURE` (nouvelle classe `UnsupportedRiskMeasureError`, sous-classe
+    d'`UnsupportedInstrumentError`, traduite avant elle). Un marché choqué qui ne se calibre pas : `500
+    COMPUTATION_FAILED` avec `details.measure` ; un marché de base invalide reste `MARKET_DATA_INVALID` (422).
+  - SDK : `vanilla_irs(...)`, `PricerClient.risk(...)`, `UnsupportedRiskMeasureError`.
+- **Conséquences :** Le dashboard (onglets Marché, Trade, Risque) passe par le SDK ; une rupture de ce contrat casse les
+  tests `tests/api/test_phase2.py`.
+
+### ADR-031 : Validation contre QuantLib, bilan de la phase 2
+- **Statut :** Acceptée (27/10/2026, applique ADR-014)
+- **Contexte :** Confronter les tolérances de départ (CONVENTIONS.md section 5) aux écarts réels de la phase 2.
+- **Décision :**
+  - Tolérances **inchangées** (module unique `tests/validation/tolerances.py`), plus une constante nouvelle,
+    `KEY_RATE_SUM_REL = 1e-6`, pour la cohérence interne du risque. Écarts maximaux mesurés (9 marchés = 3 dates de
+    valorisation x 3 chocs parallèles -250 / 0 / +150 bp, sur toutes les cotations dont les Euribor) :
+    - DF des courbes Euribor 3M et 6M, aux piliers, entre piliers et en extrapolation : **3,5e-13**
+      (`log_linear_df`) et **3,0e-12** (`linear_zero`) ; critère 1e-10. Mêmes dates de piliers que QuantLib.
+    - IRS vanille, 972 swaps spot (9 maturités x 2 sens x 3 taux fixes x 9 marchés x 2 indices) plus des swaps déjà
+      commencés et forward : PV/notionnel **2,2e-13**, par rate **4,0e-10** relatif, annuité **5,6e-14** relatif ;
+      critère 1e-8. Échéanciers (dates d'accrual, de paiement et de fixing, jambes fixe et flottante) : **égalité
+      exacte** sur 22 swaps dont les maturités à stub (18M, 30M).
+    - DV01 par bucket (3 trades x 56 buckets, différences centrées QuantLib refaites en reconstruisant les courbes
+      pour chaque choc) : écart maximal **9,8e-12** du DV01 parallèle du trade ; DV01 parallèle **8,1e-13** relatif ;
+      convexité **4,4e-12** du DV01 ; critère 1e-6.
+    - Somme des buckets (key-rate et par courbe) contre DV01 parallèle : **2,1e-7** relatif, tolérance 1e-6.
+  - Le DV01 par bucket est comparé **au DV01 parallèle du trade** : un bucket loin de l'échéance du trade vaut ~0 et
+    une comparaison relative à lui-même n'aurait pas de sens (même raisonnement que pour le PV, ADR-024). Les
+    comparaisons de risque utilisent le pricer de production (courbes tronquées à l'horizon, mémoïsation) face aux
+    courbes complètes de QuantLib : cela valide aussi les optimisations de l'ADR-028.
+  - Côté QuantLib, les courbes sont figées (`freeze_log_linear`) avant de pricer, pour que les fixings chargés dans
+    l'indice ne re-calibrent pas la courbe Euribor (ADR-027).
+- **Conséquences :** La validation de phase 2 tourne en ~3 minutes (`uv run pytest -m validation`, 77 tests dont
+  36 de courbes).

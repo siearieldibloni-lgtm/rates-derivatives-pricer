@@ -52,11 +52,12 @@ On compare **couche par couche**, pour pouvoir localiser l'origine d'un écart d
 |---|---|---|
 | Calendriers | Jours ouvrés TARGET / US sur 30 ans, date par date | exacte |
 | Day counts | `year_fraction` sur une grille de paires de dates | ~1e-14 |
-| Schedules | Dates de début, fin, paiement, fixing | exacte |
-| Courbe bootstrapée | DF, zéros et forwards aux piliers et entre piliers | 1e-10 à 1e-12 |
+| Schedules | Dates de début, fin, paiement, fixing (OIS et IRS vanille, jambes fixe et flottante) | exacte |
+| Courbe bootstrapée | DF, zéros et forwards aux piliers et entre piliers, courbe €STR et courbes de projection Euribor | 1e-10 à 1e-12 |
 | Cashflows | Montants flottants projetés, coupons OIS composés | 1e-9 relatif |
 | PV, par rate, annuité | Swaps de plusieurs maturités, sens, notionnels | 1e-8 relatif |
-| DV01 par bucket | Par rapport aux différences finies QuantLib sur les mêmes cotations | 1e-6 relatif |
+| DV01 par bucket | Par rapport aux différences finies QuantLib sur les mêmes cotations (courbes reconstruites par QuantLib pour chaque choc) | 1e-6, rapporté au DV01 parallèle du trade (ADR-031) |
+| Cohérence interne du risque | Somme des DV01 par bucket et par courbe = DV01 parallèle | 1e-6 relatif au DV01 parallèle |
 
 - Les tolérances sont des **constantes nommées dans un seul module de test**, jamais dispersées.
 - Elles sont ajustées selon les écarts réels constatés, et **chaque ajustement est documenté** dans DECISIONS.md.
