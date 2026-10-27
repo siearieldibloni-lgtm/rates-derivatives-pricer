@@ -130,7 +130,7 @@ def _service() -> PricerService:
 def test_service_metadata() -> None:
     service = _service()
     catalog: dict[str, Any] = service.catalog()
-    assert catalog["instrument_types"] == ["ois_swap"]
+    assert catalog["instrument_types"] == ["ois_swap", "vanilla_irs"]
     assert catalog["solvers"] == ["brent", "newton"]
     assert all(service.readiness().values())
     assert REFERENCE_SNAPSHOT in service.list_snapshots()

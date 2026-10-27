@@ -41,16 +41,20 @@ class CalibrationReport:
     """Calibration diagnostics of one curve.
 
     Attributes:
-        curve_name: Curve identifier (``"EUR-ESTR"``).
+        curve_name: Curve identifier (``"EUR-ESTR"``, ``"EUR-EURIBOR6M"``).
         interpolation: Interpolator name.
         solver: Solver name.
         pillars: Per-pillar diagnostics, by increasing pillar date.
+        index_name: Key of the curve in ``MarketEnvironment.projection_curves`` (``"ESTR"``).
+        is_discount_curve: Whether the curve discounts cashflows (the OIS curve).
     """
 
     curve_name: str
     interpolation: str
     solver: str
     pillars: tuple[PillarReport, ...]
+    index_name: str = ""
+    is_discount_curve: bool = False
 
     @property
     def max_abs_residual(self) -> float:

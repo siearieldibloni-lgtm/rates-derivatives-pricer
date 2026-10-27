@@ -72,6 +72,9 @@ class DiscountCurve(Curve):
         interpolator: Interpolation scheme between nodes.
         day_count: Time measure of the interpolation.
         name: Identifier, e.g. ``"EUR-ESTR"``.
+        _time_cache: Memo of :meth:`time` by date. It only depends on the reference date and the
+            day count, so :meth:`with_pillars` shares it between the many candidate curves of a
+            bootstrap (the same coupon dates are queried at every solver iteration).
     """
 
     curve_reference_date: date
@@ -80,6 +83,7 @@ class DiscountCurve(Curve):
     interpolator: Interpolator
     day_count: DayCountConvention
     name: str = ""
+    _time_cache: dict[date, float] = field(default_factory=dict, repr=False, compare=False)
     _node_times: FloatArray = field(init=False, repr=False, compare=False)
     _node_discount_factors: FloatArray = field(init=False, repr=False, compare=False)
 
@@ -117,7 +121,11 @@ class DiscountCurve(Curve):
 
     def time(self, d: date) -> float:
         """Curve time in years (internal day count)."""
-        return self.day_count.year_fraction(self.curve_reference_date, d)
+        cached = self._time_cache.get(d)
+        if cached is None:
+            cached = self.day_count.year_fraction(self.curve_reference_date, d)
+            self._time_cache[d] = cached
+        return cached
 
     def discount_factors(self, dates: Sequence[date]) -> FloatArray:
         """Interpolated discount factors.
@@ -146,4 +154,5 @@ class DiscountCurve(Curve):
             interpolator=self.interpolator,
             day_count=self.day_count,
             name=self.name,
+            _time_cache=self._time_cache,
         )

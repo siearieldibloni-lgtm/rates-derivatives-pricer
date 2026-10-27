@@ -6,13 +6,15 @@ Amounts are unsigned (receive convention); the :class:`Leg` applies the pay/rece
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from collections.abc import Sequence
+from dataclasses import dataclass, field
 from datetime import date
+from typing import Self
 
 from rate_derivatives_pricer.core.conventions.day_count import DayCountConvention
 from rate_derivatives_pricer.core.errors import MarketDataError
 from rate_derivatives_pricer.core.market.environment import MarketEnvironment
-from rate_derivatives_pricer.core.market.indices import OvernightIndex
+from rate_derivatives_pricer.core.market.indices import IborIndex, OvernightIndex
 
 
 class Cashflow(ABC):
@@ -24,6 +26,14 @@ class Cashflow(ABC):
     @abstractmethod
     def amount(self, env: MarketEnvironment) -> float:
         """Unsigned amount paid on ``payment_date``, in the leg currency."""
+
+    @classmethod
+    def amounts(cls, cashflows: Sequence[Self], env: MarketEnvironment) -> list[float]:
+        """Amounts of several cashflows of this type (hook for vectorised implementations).
+
+        The engines call this for whole legs; the default simply loops over :meth:`amount`.
+        """
+        return [cashflow.amount(env) for cashflow in cashflows]
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,11 +53,20 @@ class Coupon(Cashflow):
     accrual_end: date
     payment_date: date
     day_count: DayCountConvention
+    _year_fraction: float = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        # Computed once: the coupon is immutable and bootstraps re-evaluate it thousands of times.
+        object.__setattr__(
+            self,
+            "_year_fraction",
+            self.day_count.year_fraction(self.accrual_start, self.accrual_end),
+        )
 
     @property
     def year_fraction(self) -> float:
         """Accrual year fraction ``tau(accrual_start, accrual_end)``."""
-        return self.day_count.year_fraction(self.accrual_start, self.accrual_end)
+        return self._year_fraction
 
     @abstractmethod
     def rate(self, env: MarketEnvironment) -> float:
@@ -156,3 +175,88 @@ class OvernightCompoundedCoupon(Coupon):
     def amount(self, env: MarketEnvironment) -> float:
         """``N * (C - 1)``."""
         return self.notional * (self.compound_factor(env) - 1.0)
+
+
+@dataclass(frozen=True, slots=True)
+class IborCoupon(Coupon):
+    """Coupon fixed in advance on an Ibor index (Euribor 3M / 6M).
+
+    The rate is observed on ``fixing_date``, ``index.fixing_days`` business days before the start
+    of the accrual period, and applies to the whole period::
+
+        realised   R = published fixing
+        projected  R = (P(start) / P(end) - 1) / tau_index(start, end)
+        amount       = N * R * tau
+
+    ``P`` is the discount factor of the index *projection* curve and ``tau_index`` the index day
+    count (QuantLib's "par coupon" convention: the forward is read over the accrual period itself,
+    not over the index's own spot-based period).
+
+    Fixings strictly before the valuation date are mandatory. The fixing of the valuation date is
+    used if available and projected otherwise, as for overnight coupons (ADR-020).
+
+    Attributes:
+        index: Ibor index (projection curve key, fixing calendar and day count).
+        fixing_date: Date on which the rate is fixed.
+    """
+
+    index: IborIndex
+    fixing_date: date
+
+    def rate(self, env: MarketEnvironment) -> float:
+        """Realised fixing if known, else the forward rate of the projection curve.
+
+        Raises:
+            MarketDataError: If the fixing date is before the valuation date and no fixing is
+                available.
+        """
+        fixing = env.fixing(self.index.name, self.fixing_date)
+        if self.fixing_date < env.valuation_date:
+            if fixing is None:
+                raise MarketDataError(
+                    f"missing {self.index.name} fixing",
+                    {"index": self.index.name, "date": self.fixing_date.isoformat()},
+                )
+            return fixing
+        if self.fixing_date == env.valuation_date and fixing is not None:
+            return fixing
+        return env.projection_curve(self.index.name).forward_rate(
+            self.accrual_start, self.accrual_end, self.index.day_count
+        )
+
+    @classmethod
+    def amounts(cls, cashflows: Sequence[Self], env: MarketEnvironment) -> list[float]:
+        """Amounts of several Ibor coupons, projecting all forwards with one curve evaluation.
+
+        Same result as looping over :meth:`amount`; the discount factors of every projected
+        coupon of an index are read in a single vectorised call, which dominates the cost of a
+        bootstrap and of every bump-and-reprice.
+        """
+        rates: dict[int, float] = {}
+        projected: dict[str, list[int]] = {}
+        for position, coupon in enumerate(cashflows):
+            fixing = env.fixing(coupon.index.name, coupon.fixing_date)
+            if coupon.fixing_date < env.valuation_date:
+                # Realised: a missing fixing raises through the scalar path.
+                rates[position] = coupon.rate(env)
+            elif coupon.fixing_date == env.valuation_date and fixing is not None:
+                rates[position] = fixing
+            else:
+                projected.setdefault(coupon.index.name, []).append(position)
+        for index_name, positions in projected.items():
+            curve = env.projection_curve(index_name)
+            coupons = [cashflows[position] for position in positions]
+            factors = curve.discount_factors(
+                [c.accrual_start for c in coupons] + [c.accrual_end for c in coupons]
+            )
+            count = len(coupons)
+            for k, (position, coupon) in enumerate(zip(positions, coupons, strict=True)):
+                # Simply compounded forward (P(start) / P(end) - 1) / tau_index.
+                tau_index = coupon.index.day_count.year_fraction(
+                    coupon.accrual_start, coupon.accrual_end
+                )
+                rates[position] = float(factors[k] / factors[count + k] - 1.0) / tau_index
+        return [
+            coupon.notional * rates[position] * coupon.year_fraction
+            for position, coupon in enumerate(cashflows)
+        ]
