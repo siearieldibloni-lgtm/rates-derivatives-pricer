@@ -22,6 +22,9 @@ class Interpolator(ABC):
 
     #: Stable identifier used in the API and the catalog (registry key).
     name: ClassVar[str]
+    #: Whether the value at ``t`` only depends on the two nodes around ``t`` (and, beyond the last
+    #: node, on the last two). The bootstrap relies on it to reuse pillars already solved.
+    local: ClassVar[bool] = False
 
     @abstractmethod
     def discount_factors(
@@ -57,6 +60,7 @@ class LogLinearOnDiscountFactor(Interpolator):
     """
 
     name: ClassVar[str] = "log_linear_df"
+    local: ClassVar[bool] = True
 
     def discount_factors(
         self, times: FloatArray, node_times: FloatArray, node_discount_factors: FloatArray
@@ -78,6 +82,7 @@ class LinearOnZeroRate(Interpolator):
     """
 
     name: ClassVar[str] = "linear_zero"
+    local: ClassVar[bool] = True
 
     def discount_factors(
         self, times: FloatArray, node_times: FloatArray, node_discount_factors: FloatArray

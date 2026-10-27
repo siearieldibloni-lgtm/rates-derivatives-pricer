@@ -14,9 +14,18 @@ from rate_derivatives_pricer.core.market.calibration import (
     calibration_instrument_for,
 )
 from rate_derivatives_pricer.core.market.environment import MarketEnvironment
-from rate_derivatives_pricer.core.market.quotes import DepositQuote, OisSwapQuote, Quote
+from rate_derivatives_pricer.core.market.quotes import (
+    DepositQuote,
+    IborQuote,
+    OisSwapQuote,
+    Quote,
+)
 from rate_derivatives_pricer.core.market.snapshot import MarketSnapshot
 from tests.unit.helpers import VALUATION_DATE
+
+
+def _overnight_quotes(snapshot: MarketSnapshot) -> list[Quote]:
+    return [q for q in snapshot.quotes if not isinstance(q, IborQuote)]
 
 
 def test_reprices_every_calibration_quote(env: MarketEnvironment, snapshot: MarketSnapshot) -> None:
@@ -24,7 +33,7 @@ def test_reprices_every_calibration_quote(env: MarketEnvironment, snapshot: Mark
     assert report.curve_name == "EUR-ESTR"
     assert report.interpolation == "log_linear_df"
     assert report.solver == "brent"
-    assert len(report.pillars) == len(snapshot.quotes)
+    assert len(report.pillars) == len(_overnight_quotes(snapshot))
     assert report.max_abs_residual < 1e-13
     assert 0 < report.max_iterations < 20
     for pillar in report.pillars:
@@ -116,7 +125,15 @@ def test_bootstrap_logs_a_summary(
     with caplog.at_level(logging.DEBUG, logger="rate_derivatives_pricer"):
         CurveBuilder().build(snapshot)
     events = [record.getMessage() for record in caplog.records]
+    # One calibration event per quote (overnight and Ibor curves), one summary per curve.
     assert events.count("curve_pillar_calibrated") == len(snapshot.quotes)
-    summary = next(r for r in caplog.records if r.getMessage() == "curve_build_completed")
-    assert summary.pillar_count == len(snapshot.quotes)  # type: ignore[attr-defined]
+    summaries = {
+        r.curve: r  # type: ignore[attr-defined]
+        for r in caplog.records
+        if r.getMessage() == "curve_build_completed"
+    }
+    assert set(summaries) == {"EUR-ESTR", "EUR-EURIBOR3M", "EUR-EURIBOR6M"}
+    summary = summaries["EUR-ESTR"]
+    assert summary.pillar_count == len(_overnight_quotes(snapshot))  # type: ignore[attr-defined]
     assert summary.snapshot_name == snapshot.name  # type: ignore[attr-defined]
+    assert events.count("curves_build_completed") == 1

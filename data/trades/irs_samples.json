@@ -1,0 +1,18 @@
+{
+  "description": "Sample EUR vanilla IRS trades against Euribor (rates in decimal, notionals in EUR).",
+  "trades": [
+    {"id": "IRS-6M-5Y-PAYER", "type": "vanilla_irs",
+     "params": {"notional": 10000000, "fixed_rate": 0.025, "direction": "pay_fixed", "maturity": "5Y"}},
+    {"id": "IRS-3M-2Y-RECEIVER", "type": "vanilla_irs",
+     "params": {"index": "EURIBOR3M", "notional": 25000000, "fixed_rate": 0.022,
+                "direction": "receive_fixed", "maturity": "2Y"}},
+    {"id": "IRS-6M-20Y-PAYER", "type": "vanilla_irs",
+     "params": {"notional": 5000000, "fixed_rate": 0.027, "direction": "pay_fixed", "maturity": "20Y"}},
+    {"id": "IRS-SEASONED-3Y", "type": "vanilla_irs",
+     "params": {"notional": 20000000, "fixed_rate": 0.021, "direction": "pay_fixed",
+                "start_date": "2026-03-16", "maturity": "3Y"}},
+    {"id": "IRS-FORWARD-10Y", "type": "vanilla_irs",
+     "params": {"notional": 15000000, "fixed_rate": 0.0265, "direction": "receive_fixed",
+                "start_date": "2027-10-21", "end_date": "2037-10-21"}}
+  ]
+}

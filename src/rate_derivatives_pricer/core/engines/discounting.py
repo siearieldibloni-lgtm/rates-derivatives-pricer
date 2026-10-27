@@ -1,10 +1,11 @@
-"""Discounting engine for swaps: sum of discounted cashflows per leg.
+"""Discounting engine for swaps (OIS and vanilla IRS): sum of discounted cashflows per leg.
 
 Conventions:
 
 * a cashflow paid on or before the valuation date has occurred and is excluded (as QuantLib's
   default ``includeReferenceDateEvents = False``);
-* ``PV = sum_legs sign(leg) * sum_i amount_i * P(pay_i)`` on the discount curve;
+* ``PV = sum_legs sign(leg) * sum_i amount_i * P(pay_i)`` on the discount curve (the OIS curve);
+  floating amounts are projected on the curve of their own index (multi-curve);
 * ``annuity = sum_i N * tau_i * P(pay_i)`` over the remaining fixed coupons;
 * ``par rate = PV(floating leg, unsigned) / annuity``.
 """
@@ -26,7 +27,7 @@ from rate_derivatives_pricer.core.engines.results import (
 from rate_derivatives_pricer.core.errors import PricingError, UnsupportedInstrumentError
 from rate_derivatives_pricer.core.instruments.cashflows import Coupon
 from rate_derivatives_pricer.core.instruments.legs import Leg
-from rate_derivatives_pricer.core.instruments.swaps import Instrument, OisSwap
+from rate_derivatives_pricer.core.instruments.swaps import Instrument, OisSwap, Swap, VanillaIrs
 from rate_derivatives_pricer.core.market.environment import MarketEnvironment
 from rate_derivatives_pricer.core.registry import ENGINES
 
@@ -45,13 +46,27 @@ def _alive_coupons(leg: Leg, env: MarketEnvironment) -> list[Coupon]:
     ]
 
 
+def _coupon_amounts(coupons: list[Coupon], env: MarketEnvironment) -> list[float]:
+    """Unsigned amounts of ``coupons``, evaluated in one batch per coupon type."""
+    amounts = [0.0] * len(coupons)
+    positions_by_type: dict[type[Coupon], list[int]] = {}
+    for position, coupon in enumerate(coupons):
+        positions_by_type.setdefault(type(coupon), []).append(position)
+    for coupon_type, positions in positions_by_type.items():
+        batch = coupon_type.amounts([coupons[position] for position in positions], env)
+        for position, amount in zip(positions, batch, strict=True):
+            amounts[position] = amount
+    return amounts
+
+
 def _unsigned_leg_value(leg: Leg, env: MarketEnvironment) -> float:
     """``sum_i amount_i * P(pay_i)`` over the remaining coupons, without the leg sign."""
     coupons = _alive_coupons(leg, env)
     if not coupons:
         return 0.0
     discount_factors = env.discount_curve.discount_factors([cf.payment_date for cf in coupons])
-    return float(sum(cf.amount(env) * df for cf, df in zip(coupons, discount_factors, strict=True)))
+    amounts = _coupon_amounts(coupons, env)
+    return float(sum(a * df for a, df in zip(amounts, discount_factors, strict=True)))
 
 
 def _annuity(leg: Leg, env: MarketEnvironment) -> float:
@@ -68,15 +83,20 @@ def _annuity(leg: Leg, env: MarketEnvironment) -> float:
     )
 
 
+# Decorators apply bottom-up: ois_swap is registered first (catalog order).
+@ENGINES.register((VanillaIrs.instrument_type, "discounting"))
 @ENGINES.register((OisSwap.instrument_type, "discounting"))
 class DiscountingSwapEngine(PricingEngine):
-    """Prices fixed-vs-floating swaps by discounting projected cashflows on one curve."""
+    """Prices fixed-vs-floating swaps: floating legs projected per index, all discounted on OIS."""
 
     method: ClassVar[str] = "discounting"
-    supported_instruments: ClassVar[tuple[str, ...]] = (OisSwap.instrument_type,)
+    supported_instruments: ClassVar[tuple[str, ...]] = (
+        OisSwap.instrument_type,
+        VanillaIrs.instrument_type,
+    )
 
-    def _check(self, instrument: Instrument) -> OisSwap:
-        if not isinstance(instrument, OisSwap):
+    def _check(self, instrument: Instrument) -> Swap:
+        if not isinstance(instrument, OisSwap | VanillaIrs):
             raise UnsupportedInstrumentError(
                 "DiscountingSwapEngine cannot price this instrument",
                 {"instrument_type": instrument.instrument_type},
@@ -92,15 +112,22 @@ class DiscountingSwapEngine(PricingEngine):
             PricingError: If no fixed coupon remains (annuity is zero).
         """
         swap = self._check(instrument)
-        annuity = _annuity(swap.fixed_leg, env)
+        fixed_leg, floating_leg = swap.legs
+        annuity = _annuity(fixed_leg, env)
         if annuity == 0.0:
             raise PricingError("par rate undefined: no remaining fixed coupon")
-        return _unsigned_leg_value(swap.overnight_leg, env) / annuity
+        return _unsigned_leg_value(floating_leg, env) / annuity
+
+    def present_value(self, instrument: Instrument, env: MarketEnvironment) -> float:
+        """PV only: signed discounted value of each leg (no cashflow table, no logging)."""
+        swap = self._check(instrument)
+        return float(sum(leg.direction.sign * _unsigned_leg_value(leg, env) for leg in swap.legs))
 
     def price(self, instrument: Instrument, env: MarketEnvironment) -> PricingResult:
         """Full pricing: PV per leg, cashflow table, par rate, annuity and PVBP."""
         started = time.perf_counter()
         swap = self._check(instrument)
+        fixed_leg, floating_leg = swap.legs
 
         rows: list[CashflowResult] = []
         leg_results: list[LegResult] = []
@@ -111,8 +138,10 @@ class DiscountingSwapEngine(PricingEngine):
                 [cf.payment_date for cf in coupons]
             )
             leg_pv = 0.0
-            for coupon, discount_factor in zip(coupons, discount_factors, strict=True):
-                amount = coupon.amount(env)
+            amounts = _coupon_amounts(coupons, env)
+            for coupon, amount, discount_factor in zip(
+                coupons, amounts, discount_factors, strict=True
+            ):
                 signed_amount = leg.direction.sign * amount
                 present_value = signed_amount * float(discount_factor)
                 leg_pv += present_value
@@ -131,11 +160,11 @@ class DiscountingSwapEngine(PricingEngine):
                         present_value=present_value,
                     )
                 )
-            if leg is swap.overnight_leg:
+            if leg is floating_leg:
                 floating_unsigned_pv = leg.direction.sign * leg_pv
             leg_results.append(LegResult(leg.name, leg.direction.value, leg_pv))
 
-        annuity = _annuity(swap.fixed_leg, env)
+        annuity = _annuity(fixed_leg, env)
         warnings: list[str] = []
         if annuity > 0.0:
             par_rate = floating_unsigned_pv / annuity

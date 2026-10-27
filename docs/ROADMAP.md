@@ -77,7 +77,10 @@ Une phase = une branche = une PR. La CI doit passer avant la fusion ;
   un test d'intégration vérifie que SDK -> HTTP -> API -> services -> cœur donne exactement les mêmes nombres que le
   cœur appelé directement, et un *golden file* fige les résultats de référence.
 
-## Phase 2 : IRS vanille, multi-courbes, risque de base
+## Phase 2 : IRS vanille, multi-courbes, risque de base — IMPLÉMENTÉE
+
+> Branche `phase-2-irs-multicurve-risk`, en attente de fusion (puis clôture des docs comme en phase 1).
+> Conventions validées avant implémentation (ADR-027) ; décisions de la phase : ADR-027 à ADR-031.
 
 **Livrables**
 - `IborIndex` (Euribor 3M/6M), `IborSwapQuote`, `IborCoupon`, `VanillaIrs`.
@@ -94,6 +97,20 @@ Une phase = une branche = une PR. La CI doit passer avant la fusion ;
 - DV01 par bucket : écart relatif < 1e-6 vs différences finies QuantLib sur les mêmes cotations.
 - **Cohérence interne** : somme des DV01 par bucket ≈ DV01 parallèle (test de propriété, tolérance documentée).
 - Ajout d'une mesure de risque de test **sans modifier** `risk/` ni les moteurs (preuve d'extensibilité).
+
+**Bilan de vérification** (en local sous Windows ; la CI Linux le rejouera sur la PR)
+- Boucle `ruff check`, `ruff format --check`, `mypy` (strict sur `core/` et `services/`), `lint-imports` (5 contrats) et
+  `pytest` : **424 tests verts** (dont 152 de validation QuantLib), couverture totale **96 %**, `core/` >= 94 % par fichier.
+- Courbes Euribor 3M et 6M sur 9 marchés x 2 interpolations : écart DF max **3,5e-13** (`log_linear_df`) et 3,0e-12
+  (`linear_zero`) (critère : 1e-10), mêmes piliers que QuantLib.
+- IRS vanille : 972 swaps spot plus swaps déjà commencés et forward : PV/notionnel **2,2e-13**, par rate 4,0e-10,
+  annuité 5,6e-14 (critère : 1e-8) ; échéanciers (dont stubs) à égalité exacte avec QuantLib.
+- DV01 par bucket vs différences finies QuantLib : **9,8e-12** du DV01 parallèle (critère : 1e-6) ; somme des buckets =
+  DV01 parallèle à 2,1e-7 près (tolérance 1e-6).
+- Extensibilité : un test enregistre une mesure de risque depuis `tests/` sans modifier `risk/` ni les moteurs.
+- Performance (ADR-028) : key-rate d'un IRS 5 ans en ~2,5 s (43 s avant optimisation exacte).
+- Tranche verticale : `/v1/risk`, SDK (`vanilla_irs`, `risk`) et dashboard (onglets Marché, Trade, Risque) ; test
+  d'intégration SDK -> HTTP -> cœur identique au bit près, et *golden file* de la phase 2.
 
 ## Phase 3 : risque avancé
 

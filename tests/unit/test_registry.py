@@ -28,7 +28,7 @@ def test_builtin_components_are_registered() -> None:
 def test_unknown_keys_raise_the_registry_error_type() -> None:
     with pytest.raises(UnsupportedInstrumentError) as error:
         INSTRUMENTS.get("swaption")
-    assert error.value.details["available"] == ["ois_swap"]
+    assert error.value.details["available"] == ["ois_swap", "vanilla_irs"]
     with pytest.raises(ConventionError):
         INTERPOLATORS.get("cubic")
 

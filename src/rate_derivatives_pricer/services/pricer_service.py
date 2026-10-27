@@ -18,6 +18,7 @@ import numpy as np
 import rate_derivatives_pricer
 from rate_derivatives_pricer.core.engines.base import DEFAULT_PRICING_METHOD, engine_for
 from rate_derivatives_pricer.core.errors import ConventionError
+from rate_derivatives_pricer.core.instruments.swaps import Instrument, Swap
 from rate_derivatives_pricer.core.market.bootstrap import CurveBuilder, CurveBuildOptions
 from rate_derivatives_pricer.core.market.environment import MarketEnvironment
 from rate_derivatives_pricer.core.market.providers import MarketDataProvider
@@ -30,17 +31,25 @@ from rate_derivatives_pricer.core.registry import (
     ENGINES,
     INSTRUMENTS,
     INTERPOLATORS,
+    RISK_MEASURES,
 )
+from rate_derivatives_pricer.core.risk import BumpMode, RiskEngine, RiskSettings
 from rate_derivatives_pricer.services.curve_cache import CacheStats, CurveCache
 from rate_derivatives_pricer.services.mappers import (
     curves_payload,
     market_fingerprint,
     pricing_payload,
+    risk_payload,
     snapshot_from_input,
     snapshot_payload,
     trade_fingerprint,
 )
-from rate_derivatives_pricer.services.requests import CalculationOptions, MarketInput, TradeInput
+from rate_derivatives_pricer.services.requests import (
+    CalculationOptions,
+    MarketInput,
+    RiskOptions,
+    TradeInput,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -128,12 +137,13 @@ class PricerService:
                     "calendar": conventions.calendar.name,
                     "spot_lag_days": conventions.spot_lag_days,
                     "overnight_index": conventions.overnight_index.name,
+                    "ibor_indices": [index.name for index in conventions.ibor_indices],
                 }
                 for code, conventions in ((c, CONVENTIONS.get(c)) for c in CONVENTIONS)
             ],
             "calendars": list(CALENDARS.keys()),
             "day_counts": list(DAY_COUNTS.keys()),
-            "risk_measures": [],
+            "risk_measures": list(RISK_MEASURES.keys()),
         }
 
     def cache_stats(self) -> CacheStats:
@@ -274,6 +284,101 @@ class PricerService:
                 timings_ms=timings,
                 curve_cache=cache_status,
                 warnings=pricing.diagnostics.warnings,
+                input_hashes={"market": market_hash, "trade": trade_hash},
+            ),
+        )
+
+    def risk(
+        self,
+        market: MarketInput,
+        trade: TradeInput,
+        risk_options: RiskOptions,
+        options: CalculationOptions,
+    ) -> ServiceResult:
+        """Risk measures of a trade by bump-and-reprice (``/v1/risk``).
+
+        Every bump shifts the calibration quotes, re-bootstraps the curves and reprices the
+        trade. The curves are built only as far as the trade needs and share one builder, so
+        pillars a bump cannot move are not solved again. Bumped curves bypass the curve cache.
+
+        Raises:
+            UnsupportedInstrumentError: Unknown instrument type.
+            UnsupportedRiskMeasureError: Unknown risk measure.
+            ConventionError | ScheduleError: Invalid trade definition (or currency mismatch).
+            MarketDataError: Invalid market data or missing fixings.
+            RiskComputationError: A bumped market could not be calibrated or priced.
+        """
+        started = time.perf_counter()
+        timings: dict[str, float] = {}
+        # Fail fast on unknown names, before any market data work.
+        factory = INSTRUMENTS.get(trade.type)
+        engine = engine_for(trade.type, DEFAULT_PRICING_METHOD)
+        for name in risk_options.measures:
+            RISK_MEASURES.get(name)
+        try:
+            mode = BumpMode(risk_options.mode)
+        except ValueError:
+            raise ConventionError(
+                f"unknown bump mode: {risk_options.mode!r}",
+                {"mode": risk_options.mode, "available": [m.value for m in BumpMode]},
+            ) from None
+
+        market_started = time.perf_counter()
+        snapshot = snapshot_from_input(market, options, self._provider)
+        timings["market_data"] = _elapsed_ms(market_started)
+        instrument = factory(dict(trade.params), snapshot.valuation_date)
+        if instrument.currency != snapshot.currency:
+            raise ConventionError(
+                "trade currency differs from the market data currency (no FX in v1)",
+                {"trade_currency": instrument.currency, "market_currency": snapshot.currency},
+            )
+
+        # One builder for all the bumps of this request: it remembers the pillars it has solved.
+        builder = CurveBuilder(
+            CurveBuildOptions(interpolation=options.interpolation, solver=options.solver)
+        )
+
+        def pricer(priced: Instrument, bumped: MarketSnapshot) -> float:
+            horizon = priced.last_cashflow_date if isinstance(priced, Swap) else None
+            return engine.present_value(priced, builder.build(bumped, horizon=horizon))
+
+        risk_started = time.perf_counter()
+        report = RiskEngine(pricer).compute(
+            instrument,
+            snapshot,
+            risk_options.measures,
+            RiskSettings(bump_size_bp=risk_options.bump_size_bp, mode=mode),
+        )
+        timings["risk"] = _elapsed_ms(risk_started)
+        timings["total"] = _elapsed_ms(started)
+
+        market_hash = market_fingerprint(snapshot, options, self.core_version)
+        trade_hash = trade_fingerprint(trade)
+        logger.info(
+            "calculation_audit",
+            extra={
+                "calculation": "risk",
+                "market_hash": market_hash,
+                "trade_hash": trade_hash,
+                "snapshot_name": snapshot.name,
+                "trade_type": trade.type,
+                "currency": instrument.currency,
+                "options": {"interpolation": options.interpolation, "solver": options.solver},
+                "risk_options": {
+                    "measures": list(risk_options.measures),
+                    "bump_size_bp": risk_options.bump_size_bp,
+                    "mode": mode.value,
+                },
+                "versions": self.version_info(),
+                "present_value": report.base_pv,
+                "risk_values": {result.measure: result.value for result in report.results},
+                "duration_ms": timings["total"],
+            },
+        )
+        return ServiceResult(
+            result=risk_payload(report, instrument.currency, snapshot.valuation_date),
+            diagnostics=Diagnostics(
+                timings_ms=timings,
                 input_hashes={"market": market_hash, "trade": trade_hash},
             ),
         )

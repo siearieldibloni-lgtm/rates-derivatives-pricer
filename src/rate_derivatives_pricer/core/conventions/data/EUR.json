@@ -23,5 +23,42 @@
     "end_of_month": true,
     "rule": "BACKWARD",
     "payment_lag_days": 1
+  },
+  "ibor": {
+    "default_index": "EURIBOR6M",
+    "indices": [
+      {
+        "name": "EURIBOR6M",
+        "tenor": "6M",
+        "fixing_days": 2,
+        "calendar": "TARGET",
+        "day_count": "ACT/360",
+        "business_day_convention": "MODIFIED_FOLLOWING",
+        "end_of_month": true
+      },
+      {
+        "name": "EURIBOR3M",
+        "tenor": "3M",
+        "fixing_days": 2,
+        "calendar": "TARGET",
+        "day_count": "ACT/360",
+        "business_day_convention": "MODIFIED_FOLLOWING",
+        "end_of_month": true
+      }
+    ],
+    "deposit": {
+      "settlement_days": 2,
+      "business_day_convention": "MODIFIED_FOLLOWING",
+      "end_of_month": true,
+      "day_count": "ACT/360"
+    },
+    "swap": {
+      "fixed_frequency": "ANNUAL",
+      "fixed_day_count": "30/360",
+      "business_day_convention": "MODIFIED_FOLLOWING",
+      "end_of_month": false,
+      "rule": "BACKWARD",
+      "payment_lag_days": 0
+    }
   }
 }

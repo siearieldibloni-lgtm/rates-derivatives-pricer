@@ -57,17 +57,17 @@ Le flux est fonctionnel : chaque étape prend des entrées et renvoie une sortie
 
 | Contrat | Responsabilité |
 |---|---|
-| `Quote` | Une cotation : type d'instrument, tenor, valeur, unité. `DepositQuote`, `OisSwapQuote`, `IborSwapQuote` |
+| `Quote` | Une cotation : type d'instrument, tenor, valeur, unité. `DepositQuote`, `OisSwapQuote` (courbe €STR) ; `IborDepositQuote`, `IborSwapQuote` (courbe de projection d'un indice, qu'elles nomment : `IborQuote.index_name`) |
 | `MarketSnapshot` | Date de valorisation + cotations + fixings historiques. **C'est l'unité de bump du risque** |
 | `MarketDataProvider` | `load_snapshot(name_or_date)`. v1 : `FileMarketDataProvider` (CSV/JSON dans `data/market/`) |
-| `Index` | Définition d'un indice : `OvernightIndex` (€STR, SOFR), `IborIndex` (Euribor 3M/6M) |
+| `Index` | Définition d'un indice : `OvernightIndex` (€STR, SOFR), `IborIndex` (Euribor 3M/6M : tenor, jours de fixing, calendrier, day count) |
 | `Interpolator` (Strategy) | `LogLinearOnDiscountFactor` (défaut), `LinearOnZeroRate` |
 | `Solver` (Strategy) | `NewtonSolver`, `BrentSolver` (implémentations internes) |
 | `Curve` | `discount_factor(date)`, `zero_rate(date)`, `forward_rate(d1, d2)` |
 | `DiscountCurve` | Courbe définie par des nœuds (date, DF) et un `Interpolator` ; temps mesuré avec un day count interne (Act/365F par défaut) |
-| `CalibrationInstrument` | Pour une cotation et une courbe candidate, calcule la **cotation implicite** (équivalent du `RateHelper` de QuantLib) ; rend le bootstrap générique |
-| `CurveBuilder` | `build(snapshot) -> MarketEnvironment`. Bootstrap séquentiel : OIS d'abord, puis courbes de projection s'appuyant sur l'OIS |
-| `MarketEnvironment` | `discount_curve`, `projection_curve(index)`, `fixing(index, date)`. Interface consommée par instruments et moteurs |
+| `CalibrationInstrument` | Pour une cotation et une courbe candidate, calcule la **cotation implicite** (équivalent du `RateHelper` de QuantLib) ; rend le bootstrap générique. `DepositCalibration`, `OisCalibration`, `IborDepositCalibration`, `IborSwapCalibration` |
+| `CurveBuilder` | `build(snapshot, horizon=None) -> MarketEnvironment`. Bootstrap séquentiel en deux étapes : courbe €STR d'abord, puis une courbe de projection par indice Ibor actualisée sur l'€STR (ADR-028). Mémorise les piliers résolus ; `horizon` tronque les courbes pour les revalorisations de risque |
+| `MarketEnvironment` | `discount_curve` (OIS), `projection_curve(index)` (une par indice, y compris l'indice overnight), `fixing(index, date)`. Interface consommée par instruments et moteurs |
 
 ## 6. Instruments (`core/instruments`)
 
@@ -81,7 +81,7 @@ Leg = liste de Cashflow + notionnel + sens (pay / receive)
 
 Cashflow (abstrait) : payment_date, amount(env: MarketEnvironment)
  ├── FixedCoupon
- ├── IborCoupon                 (taux projeté sur la courbe de projection)
+ ├── IborCoupon                 (fixé 2 jours avant le début ; taux projeté sur la courbe de l'indice)
  └── OvernightCompoundedCoupon  (composition quotidienne, lookback, lag, payment delay)
 ```
 
@@ -92,24 +92,26 @@ Cashflow (abstrait) : payment_date, amount(env: MarketEnvironment)
 ## 7. Moteurs de pricing (`core/engines`)
 
 - `PricingEngine.price(instrument, env) -> PricingResult` ; déclare les types d'instruments supportés.
-- `DiscountingSwapEngine` : somme des flux actualisés par jambe ; calcule aussi par rate et annuité (PVBP).
+- `DiscountingSwapEngine` : somme des flux actualisés par jambe ; calcule aussi par rate et annuité (PVBP). Une seule classe pour `ois_swap` et `vanilla_irs` : les flux flottants se projettent sur la courbe de leur indice, tout s'actualise sur la courbe €STR. `present_value()` est un chemin léger (sans tableau de flux ni log) utilisé par le risque.
 - **Moteurs sans état, choisis par registry** : les instruments ne portent PAS leur moteur (contrairement à QuantLib).
 - `PricingResult` : PV total, PV par jambe, tableau des flux (date, montant, DF, PV), par rate, annuité,
   **diagnostics** (temps, versions, avertissements). Jamais un simple `float`.
 
 ## 8. Risque (`core/risk`)
 
-| Contrat | Responsabilité |
-|---|---|
-| `BumpSpec` | Description d'un choc : cible (toutes les cotations, une famille, un tenor), taille en bp, mode (haut, bas, centré) |
-| `Bumper` | Applique un `BumpSpec` à un `MarketSnapshot` et renvoie un **nouveau** snapshot |
-| `RiskMeasure` | `compute(trade, snapshot, pricer) -> RiskResult` ; une classe par mesure |
-| Mesures | `ParallelDV01`, `KeyRateDV01`, `Convexity`, `CurveSpecificDV01` (actualisation vs projection), `ScenarioPnL`, `CarryRolldown` |
-| `Scenario` | Ensemble nommé de bumps (parallèle, steepener, flattener, twist) |
-| `RiskEngine` | Orchestre les mesures sur un trade, renvoie un `RiskReport` |
+| Contrat | Responsabilité | Fichier |
+|---|---|---|
+| `BumpTarget` / `BumpSpec` | Quelles cotations choquer (par courbe, type d'instrument ou identité), de combien (bp) et selon quel schéma (`up`, `down`, `central`) | `bumps.py` |
+| `Bumper` | `apply(snapshot, target, shift_bp)` renvoie un **nouveau** snapshot ; erreur si la cible ne sélectionne rien | `bumps.py` |
+| `RiskMeasure` | `compute(instrument, snapshot, pricer, settings) -> RiskResult` ; une classe par mesure, enregistrée dans `RISK_MEASURES` | `measures.py` |
+| Mesures (phase 2) | `ParallelDV01`, `KeyRateDV01`, `CurveSpecificDV01` (actualisation vs projection), `Convexity` | `measures.py` |
+| `RiskEngine` | Orchestre les mesures sur un trade, mémorise les valorisations partagées entre mesures, renvoie un `RiskReport` | `engine.py` |
+| Phase 3 | `ScenarioPnL`, `Scenario` (parallèle, steepener, flattener, twist), `CarryRolldown` | à venir |
 
-Le risque dépend d'une fonction `pricer` abstraite, pas des moteurs : remplacer le moteur ou le produit ne demande
-**aucun changement** dans `risk/`.
+Le risque dépend d'une fonction `pricer` abstraite `(instrument, snapshot) -> PV`, pas des moteurs : remplacer le moteur
+ou le produit ne demande **aucun changement** dans `risk/`. Ajouter une mesure = un fichier qui l'enregistre dans
+`RISK_MEASURES` (un test le prouve en l'enregistrant depuis `tests/`). C'est l'appelant (`services/`) qui construit le
+pricer : re-bootstrap du snapshot choqué, puis moteur de pricing.
 
 Définitions : le **par-rate DV01** choque les cotations de marché puis re-bootstrap (ce qu'utilisent les desks) ;
 le zero-rate DV01 choque directement les taux zéro de la courbe. La v1 utilise le bump-and-reprice
@@ -125,7 +127,7 @@ trancher et consigner dans DECISIONS.md en phase 3.
 | `InstrumentRegistry` | `"vanilla_irs"` -> factory |
 | `EngineRegistry` | (type d'instrument, méthode) -> moteur |
 | `InterpolatorRegistry` | `"log_linear_df"` -> classe |
-| `RiskMeasureRegistry` | `"key_rate_dv01"` -> classe |
+| `RISK_MEASURES` | `"key_rate_dv01"` -> classe (nom inconnu : `UnsupportedRiskMeasureError`, hérite de `UnsupportedInstrumentError`) |
 | `ConventionsRegistry` | `"EUR"`, `"USD"` -> `CurrencyConventions` |
 
 Enregistrement par décorateur : ajouter un composant = ajouter un fichier, sans modifier de ligne existante
@@ -140,6 +142,7 @@ RatesPricerError
  ├── MarketDataError
  ├── CalibrationError          (porte le pilier fautif et le résidu)
  ├── UnsupportedInstrumentError
+ │    └── UnsupportedRiskMeasureError
  ├── PricingError
  └── RiskComputationError
 ```
@@ -174,7 +177,8 @@ rate-derivatives-pricer/
 │   │   ├── conventions/  schedule/
 │   │   ├── market/ (quotes, indices, curves, interpolation, bootstrap, providers)
 │   │   ├── instruments/ (cashflows, legs, swaps)
-│   │   ├── engines/  risk/  registry/  errors.py
+│   │   ├── engines/  registry/  errors.py
+│   │   ├── risk/ (bumps, measures, engine)
 │   ├── services/  sdk/  ui/
 │   └── api/   (logging_config.py : configuration du logging et request_id, en place depuis la phase 0)
 └── tests/  unit/  integration/  validation/  api/  fixtures/

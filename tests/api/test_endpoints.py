@@ -57,11 +57,24 @@ def test_version(client: TestClient) -> None:
 
 def test_catalog_is_generated_from_registries(client: TestClient) -> None:
     result = client.get("/v1/catalog").json()["result"]
-    assert result["instrument_types"] == ["ois_swap"]
+    assert result["instrument_types"] == ["ois_swap", "vanilla_irs"]
+    assert result["risk_measures"] == [
+        "parallel_dv01",
+        "key_rate_dv01",
+        "curve_dv01",
+        "convexity",
+    ]
     assert {"log_linear_df", "linear_zero"} <= set(result["interpolations"])
     assert result["currencies"][0]["currency"] == "EUR"
     assert result["currencies"][0]["overnight_index"] == "ESTR"
-    assert result["pricing_methods"] == [{"instrument_type": "ois_swap", "method": "discounting"}]
+    assert result["currencies"][0]["ibor_indices"] == ["EURIBOR6M", "EURIBOR3M"]
+    assert result["pricing_methods"] == [
+        {"instrument_type": "ois_swap", "method": "discounting"},
+        {"instrument_type": "vanilla_irs", "method": "discounting"},
+    ]
+    assert {"notional", "fixed_rate", "direction"} <= set(
+        result["trade_schemas"]["vanilla_irs"]["required"]
+    )
     schema = result["trade_schemas"]["ois_swap"]
     assert {"notional", "fixed_rate", "direction"} <= set(schema["required"])
 
@@ -76,8 +89,12 @@ def test_market_snapshots(client: TestClient) -> None:
         "tenor": "ON",
         "value": 1.921,
         "unit": "percent",
+        "index": None,
     }
+    ibor_swap = next(q for q in content["quotes"] if q["type"] == "ibor_swap")
+    assert ibor_swap["index"] in {"EURIBOR6M", "EURIBOR3M"}
     assert content["fixings"]["ESTR"]
+    assert content["fixings"]["EURIBOR6M"]
 
 
 def test_unknown_snapshot_is_404(client: TestClient) -> None:

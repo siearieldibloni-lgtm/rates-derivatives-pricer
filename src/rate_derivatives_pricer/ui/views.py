@@ -13,7 +13,12 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from rate_derivatives_pricer.sdk.client import PricerClient
-from rate_derivatives_pricer.sdk.models import CurveResult, PriceResult
+from rate_derivatives_pricer.sdk.models import (
+    CurveResult,
+    PriceResult,
+    RiskMeasureResult,
+    RiskResult,
+)
 
 API_URL_ENVIRONMENT_VARIABLE = "PRICER_API_URL"
 DEFAULT_API_URL = "http://localhost:8000"
@@ -123,4 +128,64 @@ def pricing_summary(result: PriceResult) -> dict[str, str]:
     }
     for leg in result.legs:
         summary[f"PV {leg.name} ({leg.direction})"] = f"{leg.present_value:,.2f} {result.currency}"
+    return summary
+
+
+def curve_rows(curves: list[CurveResult]) -> list[dict[str, Any]]:
+    """One row per curve: name, role and calibration quality."""
+    return [
+        {
+            "curve": curve.curve_name,
+            "role": curve.role,
+            "pillars": len(curve.nodes),
+            "max |residual| (bp)": curve.max_abs_residual * BASIS_POINTS,
+            "max iterations": curve.max_iterations,
+        }
+        for curve in curves
+    ]
+
+
+def risk_figure(measure: RiskMeasureResult) -> go.Figure:
+    """Bar chart of a bucketed measure (DV01 per calibration instrument), one series per curve."""
+    figure = go.Figure()
+    # Union of the labels in order of first appearance (the overnight curve lists every tenor).
+    labels = list(dict.fromkeys(bucket.label for bucket in measure.buckets))
+    for curve in dict.fromkeys(bucket.curve for bucket in measure.buckets):
+        buckets = [bucket for bucket in measure.buckets if bucket.curve == curve]
+        figure.add_trace(
+            go.Bar(x=[b.label for b in buckets], y=[b.value for b in buckets], name=curve)
+        )
+    figure.update_layout(
+        barmode="group",
+        height=420,
+        margin={"t": 30, "b": 20},
+        legend={"orientation": "h"},
+        xaxis={
+            "title": "Calibration instrument",
+            "categoryorder": "array",
+            "categoryarray": labels,
+        },
+        yaxis={"title": measure.unit},
+    )
+    return figure
+
+
+def risk_bucket_rows(measure: RiskMeasureResult) -> list[dict[str, Any]]:
+    """Bucket table of a measure."""
+    return [
+        {
+            "curve": bucket.curve,
+            "instrument": bucket.instrument_type,
+            "bucket": bucket.label,
+            measure.unit: bucket.value,
+        }
+        for bucket in measure.buckets
+    ]
+
+
+def risk_summary(result: RiskResult) -> dict[str, str]:
+    """Headline figures of a risk run, formatted for display."""
+    summary = {"PV": f"{result.present_value:,.2f} {result.currency}"}
+    for measure in result.measures:
+        summary[measure.measure] = f"{measure.value:,.4f} {measure.unit}"
     return summary

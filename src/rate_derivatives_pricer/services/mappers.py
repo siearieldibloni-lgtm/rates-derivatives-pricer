@@ -20,6 +20,7 @@ from rate_derivatives_pricer.core.market.providers import (
     snapshot_to_dict,
 )
 from rate_derivatives_pricer.core.market.snapshot import MarketSnapshot
+from rate_derivatives_pricer.core.risk import RiskReport
 from rate_derivatives_pricer.services.requests import (
     INLINE_SNAPSHOT_NAME,
     CalculationOptions,
@@ -144,24 +145,28 @@ def _curve_grid(curve: Curve, last_date: date) -> list[dict[str, Any]]:
 
 
 def curves_payload(snapshot: MarketSnapshot, env: MarketEnvironment) -> dict[str, Any]:
-    """Result of ``/v1/curves/build``: calibration nodes and a sampled curve."""
-    curve = env.discount_curve
-    report = env.calibration[0]
-    last_pillar = report.pillars[-1].pillar_date
+    """Result of ``/v1/curves/build``: calibration nodes and a sampled curve, per curve.
+
+    The overnight (discounting) curve comes first, then one projection curve per Ibor index.
+    """
+    curves = []
+    for report in env.calibration:
+        curve = env.projection_curve(report.index_name)
+        curves.append(
+            {
+                **_calibration_payload(report, curve),
+                "role": "discount_and_projection" if report.is_discount_curve else "projection",
+                "reference_date": curve.reference_date.isoformat(),
+                "grid": _curve_grid(curve, report.pillars[-1].pillar_date),
+            }
+        )
     return {
         "snapshot": {
             "name": snapshot.name,
             "currency": snapshot.currency,
             "valuation_date": snapshot.valuation_date.isoformat(),
         },
-        "curves": [
-            {
-                **_calibration_payload(report, curve),
-                "role": "discount_and_projection",
-                "reference_date": curve.reference_date.isoformat(),
-                "grid": _curve_grid(curve, last_pillar),
-            }
-        ],
+        "curves": curves,
     }
 
 
@@ -186,6 +191,28 @@ def pricing_payload(result: PricingResult) -> dict[str, Any]:
             for row in result.cashflows
         ],
         "engine": result.diagnostics.engine,
+    }
+
+
+def risk_payload(report: RiskReport, currency: str, valuation_date: date) -> dict[str, Any]:
+    """Result of ``/v1/risk``: base PV, bump settings and one entry per measure."""
+    return {
+        "instrument_type": report.instrument_type,
+        "currency": currency,
+        "valuation_date": valuation_date.isoformat(),
+        "present_value": report.base_pv,
+        "bump": {"size_bp": report.settings.bump_size_bp, "mode": report.settings.mode.value},
+        "measures": [
+            {
+                "measure": result.measure,
+                "value": result.value,
+                "unit": result.unit,
+                "bump_count": result.bump_count,
+                "duration_ms": result.duration_ms,
+                "buckets": [asdict(bucket) for bucket in result.buckets],
+            }
+            for result in report.results
+        ],
     }
 
 

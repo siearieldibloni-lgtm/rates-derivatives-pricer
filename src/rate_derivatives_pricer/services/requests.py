@@ -14,6 +14,8 @@ DEFAULT_CURRENCY = "EUR"
 DEFAULT_INTERPOLATION = "log_linear_df"
 DEFAULT_SOLVER = "brent"
 INLINE_SNAPSHOT_NAME = "inline"
+DEFAULT_BUMP_SIZE_BP = 1.0
+DEFAULT_BUMP_MODE = "central"
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,3 +64,18 @@ class CalculationOptions:
     currency: str = DEFAULT_CURRENCY
     interpolation: str = DEFAULT_INTERPOLATION
     solver: str = DEFAULT_SOLVER
+
+
+@dataclass(frozen=True, slots=True)
+class RiskOptions:
+    """Risk measures to compute and how to bump the market.
+
+    Attributes:
+        measures: Names registered in the risk measure registry (``"key_rate_dv01"``...).
+        bump_size_bp: Bump size in basis points (> 0).
+        mode: Finite difference scheme: ``"up"``, ``"down"`` or ``"central"``.
+    """
+
+    measures: tuple[str, ...]
+    bump_size_bp: float = DEFAULT_BUMP_SIZE_BP
+    mode: str = DEFAULT_BUMP_MODE

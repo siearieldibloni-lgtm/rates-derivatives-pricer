@@ -23,13 +23,31 @@ class StrictModel(BaseModel):
 
 
 # --------------------------------------------------------------------------- market data
-class QuoteModel(StrictModel):
-    """Market quote of a calibration instrument."""
+IBOR_QUOTE_TYPES = ("ibor_deposit", "ibor_swap")
 
-    type: Literal["deposit", "ois_swap"]
+
+class QuoteModel(StrictModel):
+    """Market quote of a calibration instrument.
+
+    ``deposit`` and ``ois_swap`` calibrate the overnight curve. ``ibor_deposit`` and
+    ``ibor_swap`` calibrate the projection curve of the Ibor ``index`` they name.
+    """
+
+    type: Literal["deposit", "ois_swap", "ibor_deposit", "ibor_swap"]
     tenor: str = Field(examples=["5Y"])
     value: FiniteFloat = Field(examples=[2.254])
     unit: QuoteUnitName = "decimal"
+    index: str | None = Field(
+        default=None, description="Ibor index of an ibor_* quote.", examples=["EURIBOR6M"]
+    )
+
+    @model_validator(mode="after")
+    def _index_matches_type(self) -> QuoteModel:
+        if self.type in IBOR_QUOTE_TYPES and self.index is None:
+            raise ValueError(f"quote type {self.type} requires an index")
+        if self.type not in IBOR_QUOTE_TYPES and self.index is not None:
+            raise ValueError(f"quote type {self.type} takes no index")
+        return self
 
 
 class FixingModel(StrictModel):
@@ -92,8 +110,36 @@ class OisSwapParams(StrictModel):
         return self
 
 
+class VanillaIrsParams(StrictModel):
+    """Parameters of a vanilla IRS (``type = "vanilla_irs"``): fixed leg vs an Ibor index."""
+
+    currency: str = "EUR"
+    index: str | None = Field(
+        default=None,
+        description="Ibor index of the floating leg; the currency's default when omitted.",
+        examples=["EURIBOR6M", "EURIBOR3M"],
+    )
+    notional: float = Field(gt=0, allow_inf_nan=False, examples=[10_000_000])
+    fixed_rate: FiniteFloat = Field(description="Decimal rate (0.025 = 2.5%).", examples=[0.025])
+    direction: Literal["pay_fixed", "receive_fixed"]
+    maturity: str | None = Field(
+        default=None, description="Tenor from the start date.", examples=["5Y"]
+    )
+    start_date: dt.date | None = Field(default=None, description="Spot date when omitted.")
+    end_date: dt.date | None = None
+
+    @model_validator(mode="after")
+    def _one_maturity(self) -> VanillaIrsParams:
+        if (self.maturity is None) == (self.end_date is None):
+            raise ValueError("exactly one of maturity or end_date is required")
+        return self
+
+
 #: Parameter schema of each instrument type, also published by ``/v1/catalog``.
-TRADE_PARAMS_SCHEMAS: dict[str, type[StrictModel]] = {"ois_swap": OisSwapParams}
+TRADE_PARAMS_SCHEMAS: dict[str, type[StrictModel]] = {
+    "ois_swap": OisSwapParams,
+    "vanilla_irs": VanillaIrsParams,
+}
 
 
 class TradeModel(StrictModel):
@@ -116,6 +162,29 @@ class PriceRequest(StrictModel):
 
     market: MarketModel
     trade: TradeModel
+    options: CalculationOptionsModel = Field(default_factory=CalculationOptionsModel)
+
+
+class BumpOptionsModel(StrictModel):
+    """How the market is shocked for the risk measures."""
+
+    size_bp: float = Field(
+        default=1.0, gt=0, allow_inf_nan=False, description="Bump size in basis points."
+    )
+    mode: Literal["up", "down", "central"] = Field(
+        default="central", description="Finite difference scheme."
+    )
+
+
+class RiskRequest(StrictModel):
+    """Body of ``POST /v1/risk``."""
+
+    market: MarketModel
+    trade: TradeModel
+    measures: list[str] = Field(
+        min_length=1, examples=[["parallel_dv01", "key_rate_dv01"]], description="See /v1/catalog."
+    )
+    bump: BumpOptionsModel = Field(default_factory=BumpOptionsModel)
     options: CalculationOptionsModel = Field(default_factory=CalculationOptionsModel)
 
 
@@ -177,6 +246,7 @@ class CurrencyInfo(BaseModel):
     calendar: str
     spot_lag_days: int
     overnight_index: str
+    ibor_indices: list[str] = Field(default_factory=list)
 
 
 class PricingMethod(BaseModel):
@@ -307,3 +377,34 @@ class PriceResult(BaseModel):
     legs: list[LegResult]
     cashflows: list[CashflowResult]
     engine: str
+
+
+class RiskBucketResult(BaseModel):
+    """Sensitivity of one bucket: a calibration quote, or a whole curve."""
+
+    curve: str
+    label: str
+    instrument_type: str
+    value: float
+
+
+class RiskMeasureResult(BaseModel):
+    """One risk measure: headline value, unit and breakdown by bucket."""
+
+    measure: str
+    value: float
+    unit: str
+    bump_count: int
+    duration_ms: float
+    buckets: list[RiskBucketResult]
+
+
+class RiskResult(BaseModel):
+    """Result of ``POST /v1/risk``."""
+
+    instrument_type: str
+    currency: str
+    valuation_date: dt.date
+    present_value: float
+    bump: BumpOptionsModel
+    measures: list[RiskMeasureResult]

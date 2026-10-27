@@ -28,6 +28,7 @@ from rate_derivatives_pricer.core.errors import (
     RiskComputationError,
     ScheduleError,
     UnsupportedInstrumentError,
+    UnsupportedRiskMeasureError,
 )
 
 logger = logging.getLogger(__name__)
@@ -42,6 +43,7 @@ _CORE_ERROR_MAPPING: tuple[tuple[type[RatesPricerError], int, str], ...] = (
     (MarketDataError, 422, "MARKET_DATA_INVALID"),
     (ConventionError, 422, "INVALID_TRADE_DEFINITION"),
     (ScheduleError, 422, "INVALID_TRADE_DEFINITION"),
+    (UnsupportedRiskMeasureError, 400, "UNSUPPORTED_RISK_MEASURE"),
     (UnsupportedInstrumentError, 400, "UNSUPPORTED_INSTRUMENT"),
     (CalibrationError, 422, "CALIBRATION_FAILED"),
     (PricingError, 500, "COMPUTATION_FAILED"),

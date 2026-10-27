@@ -4,6 +4,7 @@ from typing import Any
 
 import pytest
 
+from rate_derivatives_pricer.core.errors import ConventionError, UnsupportedRiskMeasureError
 from rate_derivatives_pricer.core.market.environment import MarketEnvironment
 from rate_derivatives_pricer.core.market.providers import FileMarketDataProvider, snapshot_to_dict
 from rate_derivatives_pricer.core.market.snapshot import MarketSnapshot
@@ -18,6 +19,7 @@ from rate_derivatives_pricer.services.pricer_service import PricerService
 from rate_derivatives_pricer.services.requests import (
     CalculationOptions,
     InlineMarket,
+    RiskOptions,
     SnapshotReference,
     TradeInput,
 )
@@ -130,7 +132,8 @@ def _service() -> PricerService:
 def test_service_metadata() -> None:
     service = _service()
     catalog: dict[str, Any] = service.catalog()
-    assert catalog["instrument_types"] == ["ois_swap"]
+    assert catalog["instrument_types"] == ["ois_swap", "vanilla_irs"]
+    assert "key_rate_dv01" in catalog["risk_measures"]
     assert catalog["solvers"] == ["brent", "newton"]
     assert all(service.readiness().values())
     assert REFERENCE_SNAPSHOT in service.list_snapshots()
@@ -170,3 +173,25 @@ def test_matured_trade_reports_an_undefined_par_rate() -> None:
     outcome = _service().price(SnapshotReference(REFERENCE_SNAPSHOT), trade, CalculationOptions())
     assert outcome.result["par_rate"] is None
     assert outcome.diagnostics.warnings
+
+
+def test_risk_validates_before_working_and_does_not_use_the_curve_cache() -> None:
+    service = _service()
+    market, options = SnapshotReference(REFERENCE_SNAPSHOT), CalculationOptions()
+    trade = TradeInput(
+        "vanilla_irs",
+        {"notional": 1e6, "fixed_rate": 0.02, "direction": "pay_fixed", "maturity": "1Y"},
+    )
+    with pytest.raises(UnsupportedRiskMeasureError):
+        service.risk(market, trade, RiskOptions(("vega",)), options)
+    with pytest.raises(ConventionError, match="unknown bump mode"):
+        service.risk(market, trade, RiskOptions(("parallel_dv01",), mode="sideways"), options)
+    mismatched = TradeInput("ois_swap", {**trade.params, "currency": "USD"})
+    with pytest.raises(ConventionError):
+        service.risk(market, mismatched, RiskOptions(("parallel_dv01",)), options)
+
+    outcome = service.risk(market, trade, RiskOptions(("parallel_dv01", "convexity")), options)
+    assert outcome.diagnostics.curve_cache is None
+    assert service.cache_stats().size == 0
+    assert {"market_data", "risk", "total"} <= set(outcome.diagnostics.timings_ms)
+    assert [m["measure"] for m in outcome.result["measures"]] == ["parallel_dv01", "convexity"]

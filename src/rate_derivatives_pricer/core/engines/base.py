@@ -34,6 +34,14 @@ class PricingEngine(ABC):
             UnsupportedInstrumentError: If the instrument type is not supported.
         """
 
+    def present_value(self, instrument: Instrument, env: MarketEnvironment) -> float:
+        """PV of ``instrument`` alone, without the result tables (repeated valuations, risk).
+
+        Engines may override this with a lighter path; it must agree with
+        ``price(...).present_value`` up to rounding.
+        """
+        return self.price(instrument, env).present_value
+
 
 def engine_for(instrument_type: str, method: str = DEFAULT_PRICING_METHOD) -> PricingEngine:
     """Instantiate the engine registered for ``(instrument_type, method)``.

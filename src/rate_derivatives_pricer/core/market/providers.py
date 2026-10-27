@@ -5,7 +5,9 @@ Snapshot file layout (``data/market/<name>.json``)::
     {
       "name": "EUR_2026-10-19", "currency": "EUR", "valuation_date": "2026-10-19",
       "description": "...",
-      "quotes": [{"type": "ois_swap", "tenor": "5Y", "value": 2.25, "unit": "percent"}, ...],
+      "quotes": [{"type": "ois_swap", "tenor": "5Y", "value": 2.25, "unit": "percent"},
+                 {"type": "ibor_swap", "index": "EURIBOR6M", "tenor": "5Y", "value": 2.5,
+                  "unit": "percent"}, ...],
       "fixings": {"ESTR": [{"date": "2026-10-16", "value": 1.92, "unit": "percent"}, ...]}
     }
 
@@ -23,7 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from rate_derivatives_pricer.core.errors import MarketDataError, MarketDataNotFoundError
-from rate_derivatives_pricer.core.market.quotes import QUOTE_TYPES, QuoteUnit
+from rate_derivatives_pricer.core.market.quotes import QUOTE_TYPES, IborQuote, Quote, QuoteUnit
 from rate_derivatives_pricer.core.market.snapshot import Fixing, MarketSnapshot
 
 # Snapshot names are file stems: restricting characters prevents path traversal.
@@ -70,7 +72,7 @@ def snapshot_from_dict(data: Mapping[str, Any]) -> MarketSnapshot:
         MarketDataError: If a field is missing or invalid.
     """
     name = str(data.get("name", "inline"))
-    quotes = []
+    quotes: list[Quote] = []
     for position, raw in enumerate(_field(data, "quotes", "snapshot")):
         context = f"quotes[{position}]"
         quote_type = str(_field(raw, "type", context))
@@ -81,13 +83,21 @@ def snapshot_from_dict(data: Mapping[str, Any]) -> MarketSnapshot:
                 f"unknown quote type {quote_type!r}",
                 {"field": f"{context}.type", "allowed": sorted(QUOTE_TYPES)},
             ) from None
-        quotes.append(
-            quote_class(
-                tenor_label=str(_field(raw, "tenor", context)),
-                value=_number(_field(raw, "value", context), f"{context}.value"),
-                unit=_unit(raw.get("unit", QuoteUnit.DECIMAL.value), context),
+        tenor_label = str(_field(raw, "tenor", context))
+        value = _number(_field(raw, "value", context), f"{context}.value")
+        unit = _unit(raw.get("unit", QuoteUnit.DECIMAL.value), context)
+        if issubclass(quote_class, IborQuote):
+            # Ibor quotes name the index whose projection curve they calibrate.
+            quotes.append(
+                quote_class(
+                    tenor_label=tenor_label,
+                    value=value,
+                    unit=unit,
+                    index_name=str(_field(raw, "index", context)),
+                )
             )
-        )
+        else:
+            quotes.append(quote_class(tenor_label=tenor_label, value=value, unit=unit))
     fixings = []
     for index_name, series in dict(data.get("fixings", {})).items():
         for position, raw in enumerate(series):
@@ -111,6 +121,18 @@ def snapshot_from_dict(data: Mapping[str, Any]) -> MarketSnapshot:
     )
 
 
+def _quote_to_dict(quote: Quote) -> dict[str, Any]:
+    data: dict[str, Any] = {
+        "type": quote.instrument_type,
+        "tenor": quote.tenor_label,
+        "value": quote.value,
+        "unit": quote.unit.value,
+    }
+    if isinstance(quote, IborQuote):
+        data["index"] = quote.index_name
+    return data
+
+
 def snapshot_to_dict(snapshot: MarketSnapshot) -> dict[str, Any]:
     """Canonical dictionary of ``snapshot`` (quotes in their original units, fixings sorted)."""
     fixings: dict[str, list[dict[str, Any]]] = {}
@@ -123,15 +145,7 @@ def snapshot_to_dict(snapshot: MarketSnapshot) -> dict[str, Any]:
         "currency": snapshot.currency,
         "valuation_date": snapshot.valuation_date.isoformat(),
         "description": snapshot.description,
-        "quotes": [
-            {
-                "type": quote.instrument_type,
-                "tenor": quote.tenor_label,
-                "value": quote.value,
-                "unit": quote.unit.value,
-            }
-            for quote in snapshot.quotes
-        ],
+        "quotes": [_quote_to_dict(quote) for quote in snapshot.quotes],
         "fixings": fixings,
     }
 
