@@ -116,6 +116,7 @@ Avec Docker (phase 4) : `docker compose up`.
 | `docs/API.md` | Contrat HTTP, erreurs, logs |
 | `docs/DECISIONS.md` | Journal des décisions |
 | `docs/PHASE1.md` | Guide pédagogique de la phase 1 : chaque fichier et son rôle |
+| `docs/latex/pricing_irs.pdf` | Théorie, pratique et implémentation des IRS vanilles (multi-courbes, risque), avec exemple chiffré ; source `pricing_irs.tex`, chiffres générés par `generate_irs_data.py` |
 
 ## Langue
 
