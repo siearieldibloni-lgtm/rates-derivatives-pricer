@@ -10,6 +10,7 @@ dependencies = ["numpy>=2.1"]
 [project.optional-dependencies]
 api = [
     "fastapi>=0.115",
+    "prometheus-client>=0.21",
     "pydantic>=2.9",
     "pydantic-settings>=2.6",
     "uvicorn[standard]>=0.32",

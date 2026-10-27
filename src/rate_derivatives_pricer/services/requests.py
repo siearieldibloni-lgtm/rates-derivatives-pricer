@@ -53,6 +53,14 @@ class TradeInput:
 
 
 @dataclass(frozen=True, slots=True)
+class BatchTrade:
+    """One trade of a batch (``/v1/batch/price``), with the identifier echoed in its result."""
+
+    trade_id: str
+    trade: TradeInput
+
+
+@dataclass(frozen=True, slots=True)
 class CalculationOptions:
     """Curve construction and pricing options.
 

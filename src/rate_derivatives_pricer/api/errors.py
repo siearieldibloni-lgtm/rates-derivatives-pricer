@@ -73,9 +73,17 @@ def core_error_status(error: RatesPricerError) -> tuple[int, str]:
     return 500, INTERNAL_ERROR  # pragma: no cover - every core error has an entry
 
 
+def _count_error(request: Request, code: str) -> None:
+    """Feed the ``pricer_errors_total`` metric when the application has metrics."""
+    metrics = getattr(request.app.state, "metrics", None)
+    if metrics is not None:
+        metrics.count_error(code)
+
+
 async def _core_error_handler(request: Request, error: Exception) -> JSONResponse:
     assert isinstance(error, RatesPricerError)
     status_code, code = core_error_status(error)
+    _count_error(request, code)
     level = logging.ERROR if status_code >= 500 else logging.WARNING
     logger.log(
         level,
@@ -93,12 +101,14 @@ async def _validation_error_handler(request: Request, error: Exception) -> JSONR
         for e in error.errors()
     ]
     logger.warning("request_rejected", extra={"error_code": VALIDATION_ERROR, "errors": errors})
+    _count_error(request, VALIDATION_ERROR)
     return error_response(422, VALIDATION_ERROR, "request validation failed", {"errors": errors})
 
 
 async def _http_error_handler(request: Request, error: Exception) -> JSONResponse:
     assert isinstance(error, StarletteHTTPException)
     code = _HTTP_STATUS_CODES.get(error.status_code, "HTTP_ERROR")
+    _count_error(request, code)
     return error_response(error.status_code, code, str(error.detail))
 
 
