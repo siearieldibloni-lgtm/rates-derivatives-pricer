@@ -1,0 +1,3454 @@
+{
+  "name": "EUR_2026-10-20",
+  "currency": "EUR",
+  "valuation_date": "2026-10-20",
+  "description": "SYNTHETIC market data for development and tests (not real market quotes): the EUR_2026-10-19 market one business day later, quotes moved by +0.5bp (short end) to +2bp (10Y and beyond), ESTR fixings 2026-01-02..2026-10-19 and Euribor fixings 2026-01-02..2026-10-20.",
+  "quotes": [
+    {
+      "type": "deposit",
+      "tenor": "ON",
+      "value": 1.926,
+      "unit": "percent"
+    },
+    {
+      "type": "ois_swap",
+      "tenor": "1W",
+      "value": 1.927,
+      "unit": "percent"
+    },
+    {
+      "type": "ois_swap",
+      "tenor": "2W",
+      "value": 1.9261,
+      "unit": "percent"
+    },
+    {
+      "type": "ois_swap",
+      "tenor": "1M",
+      "value": 1.9221,
+      "unit": "percent"
+    },
+    {
+      "type": "ois_swap",
+      "tenor": "2M",
+      "value": 1.9103,
+      "unit": "percent"
+    },
+    {
+      "type": "ois_swap",
+      "tenor": "3M",
+      "value": 1.8984,
+      "unit": "percent"
+    },
+    {
+      "type": "ois_swap",
+      "tenor": "6M",
+      "value": 1.8798,
+      "unit": "percent"
+    },
+    {
+      "type": "ois_swap",
+      "tenor": "9M",
+      "value": 1.8771,
+      "unit": "percent"
+    },
+    {
+      "type": "ois_swap",
+      "tenor": "1Y",
+      "value": 1.8915,
+      "unit": "percent"
+    },
+    {
+      "type": "ois_swap",
+      "tenor": "18M",
+      "value": 1.9412,
+      "unit": "percent"
+    },
+    {
+      "type": "ois_swap",
+      "tenor": "2Y",
+      "value": 2.0,
+      "unit": "percent"
+    },
+    {
+      "type": "ois_swap",
+      "tenor": "3Y",
+      "value": 2.1075,
+      "unit": "percent"
+    },
+    {
+      "type": "ois_swap",
+      "tenor": "4Y",
+      "value": 2.194,
+      "unit": "percent"
+    },
+    {
+      "type": "ois_swap",
+      "tenor": "5Y",
+      "value": 2.2665,
+      "unit": "percent"
+    },
+    {
+      "type": "ois_swap",
+      "tenor": "6Y",
+      "value": 2.332,
+      "unit": "percent"
+    },
+    {
+      "type": "ois_swap",
+      "tenor": "7Y",
+      "value": 2.3945,
+      "unit": "percent"
+    },
+    {
+      "type": "ois_swap",
+      "tenor": "8Y",
+      "value": 2.453,
+      "unit": "percent"
+    },
+    {
+      "type": "ois_swap",
+      "tenor": "9Y",
+      "value": 2.5065,
+      "unit": "percent"
+    },
+    {
+      "type": "ois_swap",
+      "tenor": "10Y",
+      "value": 2.555,
+      "unit": "percent"
+    },
+    {
+      "type": "ois_swap",
+      "tenor": "12Y",
+      "value": 2.632,
+      "unit": "percent"
+    },
+    {
+      "type": "ois_swap",
+      "tenor": "15Y",
+      "value": 2.708,
+      "unit": "percent"
+    },
+    {
+      "type": "ois_swap",
+      "tenor": "20Y",
+      "value": 2.751,
+      "unit": "percent"
+    },
+    {
+      "type": "ois_swap",
+      "tenor": "25Y",
+      "value": 2.722,
+      "unit": "percent"
+    },
+    {
+      "type": "ois_swap",
+      "tenor": "30Y",
+      "value": 2.671,
+      "unit": "percent"
+    },
+    {
+      "type": "ibor_deposit",
+      "index": "EURIBOR6M",
+      "tenor": "6M",
+      "value": 2.0197,
+      "unit": "percent"
+    },
+    {
+      "type": "ibor_swap",
+      "index": "EURIBOR6M",
+      "tenor": "1Y",
+      "value": 2.0415,
+      "unit": "percent"
+    },
+    {
+      "type": "ibor_swap",
+      "index": "EURIBOR6M",
+      "tenor": "2Y",
+      "value": 2.165,
+      "unit": "percent"
+    },
+    {
+      "type": "ibor_swap",
+      "index": "EURIBOR6M",
+      "tenor": "3Y",
+      "value": 2.2795,
+      "unit": "percent"
+    },
+    {
+      "type": "ibor_swap",
+      "index": "EURIBOR6M",
+      "tenor": "4Y",
+      "value": 2.37,
+      "unit": "percent"
+    },
+    {
+      "type": "ibor_swap",
+      "index": "EURIBOR6M",
+      "tenor": "5Y",
+      "value": 2.4445,
+      "unit": "percent"
+    },
+    {
+      "type": "ibor_swap",
+      "index": "EURIBOR6M",
+      "tenor": "6Y",
+      "value": 2.509,
+      "unit": "percent"
+    },
+    {
+      "type": "ibor_swap",
+      "index": "EURIBOR6M",
+      "tenor": "7Y",
+      "value": 2.5685,
+      "unit": "percent"
+    },
+    {
+      "type": "ibor_swap",
+      "index": "EURIBOR6M",
+      "tenor": "8Y",
+      "value": 2.623,
+      "unit": "percent"
+    },
+    {
+      "type": "ibor_swap",
+      "index": "EURIBOR6M",
+      "tenor": "9Y",
+      "value": 2.6715,
+      "unit": "percent"
+    },
+    {
+      "type": "ibor_swap",
+      "index": "EURIBOR6M",
+      "tenor": "10Y",
+      "value": 2.715,
+      "unit": "percent"
+    },
+    {
+      "type": "ibor_swap",
+      "index": "EURIBOR6M",
+      "tenor": "12Y",
+      "value": 2.78,
+      "unit": "percent"
+    },
+    {
+      "type": "ibor_swap",
+      "index": "EURIBOR6M",
+      "tenor": "15Y",
+      "value": 2.838,
+      "unit": "percent"
+    },
+    {
+      "type": "ibor_swap",
+      "index": "EURIBOR6M",
+      "tenor": "20Y",
+      "value": 2.856,
+      "unit": "percent"
+    },
+    {
+      "type": "ibor_swap",
+      "index": "EURIBOR6M",
+      "tenor": "25Y",
+      "value": 2.807,
+      "unit": "percent"
+    },
+    {
+      "type": "ibor_swap",
+      "index": "EURIBOR6M",
+      "tenor": "30Y",
+      "value": 2.741,
+      "unit": "percent"
+    },
+    {
+      "type": "ibor_deposit",
+      "index": "EURIBOR3M",
+      "tenor": "3M",
+      "value": 1.9904,
+      "unit": "percent"
+    },
+    {
+      "type": "ibor_swap",
+      "index": "EURIBOR3M",
+      "tenor": "1Y",
+      "value": 1.9915,
+      "unit": "percent"
+    },
+    {
+      "type": "ibor_swap",
+      "index": "EURIBOR3M",
+      "tenor": "2Y",
+      "value": 2.115,
+      "unit": "percent"
+    },
+    {
+      "type": "ibor_swap",
+      "index": "EURIBOR3M",
+      "tenor": "3Y",
+      "value": 2.2295,
+      "unit": "percent"
+    },
+    {
+      "type": "ibor_swap",
+      "index": "EURIBOR3M",
+      "tenor": "4Y",
+      "value": 2.32,
+      "unit": "percent"
+    },
+    {
+      "type": "ibor_swap",
+      "index": "EURIBOR3M",
+      "tenor": "5Y",
+      "value": 2.3945,
+      "unit": "percent"
+    },
+    {
+      "type": "ibor_swap",
+      "index": "EURIBOR3M",
+      "tenor": "6Y",
+      "value": 2.459,
+      "unit": "percent"
+    },
+    {
+      "type": "ibor_swap",
+      "index": "EURIBOR3M",
+      "tenor": "7Y",
+      "value": 2.5185,
+      "unit": "percent"
+    },
+    {
+      "type": "ibor_swap",
+      "index": "EURIBOR3M",
+      "tenor": "8Y",
+      "value": 2.573,
+      "unit": "percent"
+    },
+    {
+      "type": "ibor_swap",
+      "index": "EURIBOR3M",
+      "tenor": "9Y",
+      "value": 2.6215,
+      "unit": "percent"
+    },
+    {
+      "type": "ibor_swap",
+      "index": "EURIBOR3M",
+      "tenor": "10Y",
+      "value": 2.665,
+      "unit": "percent"
+    },
+    {
+      "type": "ibor_swap",
+      "index": "EURIBOR3M",
+      "tenor": "12Y",
+      "value": 2.73,
+      "unit": "percent"
+    },
+    {
+      "type": "ibor_swap",
+      "index": "EURIBOR3M",
+      "tenor": "15Y",
+      "value": 2.788,
+      "unit": "percent"
+    },
+    {
+      "type": "ibor_swap",
+      "index": "EURIBOR3M",
+      "tenor": "20Y",
+      "value": 2.806,
+      "unit": "percent"
+    },
+    {
+      "type": "ibor_swap",
+      "index": "EURIBOR3M",
+      "tenor": "25Y",
+      "value": 2.757,
+      "unit": "percent"
+    },
+    {
+      "type": "ibor_swap",
+      "index": "EURIBOR3M",
+      "tenor": "30Y",
+      "value": 2.691,
+      "unit": "percent"
+    }
+  ],
+  "fixings": {
+    "ESTR": [
+      {
+        "date": "2026-01-02",
+        "value": 1.931,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-05",
+        "value": 1.93,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-06",
+        "value": 1.932,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-07",
+        "value": 1.928,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-08",
+        "value": 1.929,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-09",
+        "value": 1.93,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-12",
+        "value": 1.931,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-13",
+        "value": 1.93,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-14",
+        "value": 1.93,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-15",
+        "value": 1.932,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-16",
+        "value": 1.928,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-19",
+        "value": 1.929,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-20",
+        "value": 1.928,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-21",
+        "value": 1.927,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-22",
+        "value": 1.931,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-23",
+        "value": 1.93,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-26",
+        "value": 1.929,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-27",
+        "value": 1.929,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-28",
+        "value": 1.931,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-29",
+        "value": 1.929,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-30",
+        "value": 1.92,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-02",
+        "value": 1.929,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-03",
+        "value": 1.927,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-04",
+        "value": 1.927,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-05",
+        "value": 1.929,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-06",
+        "value": 1.931,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-09",
+        "value": 1.929,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-10",
+        "value": 1.928,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-11",
+        "value": 1.929,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-12",
+        "value": 1.927,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-13",
+        "value": 1.928,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-16",
+        "value": 1.928,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-17",
+        "value": 1.928,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-18",
+        "value": 1.926,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-19",
+        "value": 1.929,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-20",
+        "value": 1.93,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-23",
+        "value": 1.928,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-24",
+        "value": 1.928,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-25",
+        "value": 1.927,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-26",
+        "value": 1.929,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-27",
+        "value": 1.916,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-02",
+        "value": 1.928,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-03",
+        "value": 1.929,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-04",
+        "value": 1.926,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-05",
+        "value": 1.929,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-06",
+        "value": 1.928,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-09",
+        "value": 1.926,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-10",
+        "value": 1.93,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-11",
+        "value": 1.928,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-12",
+        "value": 1.928,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-13",
+        "value": 1.928,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-16",
+        "value": 1.928,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-17",
+        "value": 1.929,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-18",
+        "value": 1.927,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-19",
+        "value": 1.928,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-20",
+        "value": 1.927,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-23",
+        "value": 1.927,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-24",
+        "value": 1.927,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-25",
+        "value": 1.928,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-26",
+        "value": 1.925,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-27",
+        "value": 1.929,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-30",
+        "value": 1.929,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-31",
+        "value": 1.916,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-01",
+        "value": 1.927,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-02",
+        "value": 1.927,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-07",
+        "value": 1.925,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-08",
+        "value": 1.926,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-09",
+        "value": 1.929,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-10",
+        "value": 1.926,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-13",
+        "value": 1.926,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-14",
+        "value": 1.924,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-15",
+        "value": 1.926,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-16",
+        "value": 1.926,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-17",
+        "value": 1.927,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-20",
+        "value": 1.925,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-21",
+        "value": 1.924,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-22",
+        "value": 1.927,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-23",
+        "value": 1.928,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-24",
+        "value": 1.925,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-27",
+        "value": 1.926,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-28",
+        "value": 1.928,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-29",
+        "value": 1.928,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-30",
+        "value": 1.916,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-04",
+        "value": 1.924,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-05",
+        "value": 1.926,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-06",
+        "value": 1.924,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-07",
+        "value": 1.927,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-08",
+        "value": 1.926,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-11",
+        "value": 1.928,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-12",
+        "value": 1.924,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-13",
+        "value": 1.926,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-14",
+        "value": 1.926,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-15",
+        "value": 1.925,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-18",
+        "value": 1.926,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-19",
+        "value": 1.923,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-20",
+        "value": 1.926,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-21",
+        "value": 1.925,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-22",
+        "value": 1.924,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-25",
+        "value": 1.925,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-26",
+        "value": 1.925,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-27",
+        "value": 1.923,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-28",
+        "value": 1.925,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-29",
+        "value": 1.917,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-01",
+        "value": 1.924,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-02",
+        "value": 1.925,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-03",
+        "value": 1.927,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-04",
+        "value": 1.926,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-05",
+        "value": 1.925,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-08",
+        "value": 1.924,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-09",
+        "value": 1.924,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-10",
+        "value": 1.926,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-11",
+        "value": 1.925,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-12",
+        "value": 1.924,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-15",
+        "value": 1.924,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-16",
+        "value": 1.926,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-17",
+        "value": 1.922,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-18",
+        "value": 1.924,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-19",
+        "value": 1.922,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-22",
+        "value": 1.925,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-23",
+        "value": 1.926,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-24",
+        "value": 1.924,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-25",
+        "value": 1.925,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-26",
+        "value": 1.926,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-29",
+        "value": 1.924,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-30",
+        "value": 1.913,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-01",
+        "value": 1.926,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-02",
+        "value": 1.926,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-03",
+        "value": 1.925,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-06",
+        "value": 1.922,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-07",
+        "value": 1.924,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-08",
+        "value": 1.923,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-09",
+        "value": 1.923,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-10",
+        "value": 1.923,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-13",
+        "value": 1.922,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-14",
+        "value": 1.924,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-15",
+        "value": 1.923,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-16",
+        "value": 1.922,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-17",
+        "value": 1.923,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-20",
+        "value": 1.922,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-21",
+        "value": 1.921,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-22",
+        "value": 1.921,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-23",
+        "value": 1.923,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-24",
+        "value": 1.922,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-27",
+        "value": 1.921,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-28",
+        "value": 1.923,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-29",
+        "value": 1.923,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-30",
+        "value": 1.923,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-31",
+        "value": 1.912,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-03",
+        "value": 1.922,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-04",
+        "value": 1.922,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-05",
+        "value": 1.924,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-06",
+        "value": 1.922,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-07",
+        "value": 1.924,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-10",
+        "value": 1.923,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-11",
+        "value": 1.921,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-12",
+        "value": 1.921,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-13",
+        "value": 1.921,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-14",
+        "value": 1.922,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-17",
+        "value": 1.923,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-18",
+        "value": 1.92,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-19",
+        "value": 1.922,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-20",
+        "value": 1.92,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-21",
+        "value": 1.924,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-24",
+        "value": 1.921,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-25",
+        "value": 1.923,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-26",
+        "value": 1.924,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-27",
+        "value": 1.922,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-28",
+        "value": 1.922,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-31",
+        "value": 1.91,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-01",
+        "value": 1.92,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-02",
+        "value": 1.922,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-03",
+        "value": 1.919,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-04",
+        "value": 1.922,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-07",
+        "value": 1.919,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-08",
+        "value": 1.919,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-09",
+        "value": 1.923,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-10",
+        "value": 1.919,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-11",
+        "value": 1.919,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-14",
+        "value": 1.921,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-15",
+        "value": 1.921,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-16",
+        "value": 1.923,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-17",
+        "value": 1.923,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-18",
+        "value": 1.923,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-21",
+        "value": 1.92,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-22",
+        "value": 1.919,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-23",
+        "value": 1.922,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-24",
+        "value": 1.921,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-25",
+        "value": 1.922,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-28",
+        "value": 1.921,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-29",
+        "value": 1.922,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-30",
+        "value": 1.911,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-01",
+        "value": 1.922,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-02",
+        "value": 1.921,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-05",
+        "value": 1.92,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-06",
+        "value": 1.92,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-07",
+        "value": 1.919,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-08",
+        "value": 1.92,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-09",
+        "value": 1.919,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-12",
+        "value": 1.92,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-13",
+        "value": 1.919,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-14",
+        "value": 1.92,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-15",
+        "value": 1.919,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-16",
+        "value": 1.92,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-19",
+        "value": 1.921,
+        "unit": "percent"
+      }
+    ],
+    "EURIBOR6M": [
+      {
+        "date": "2026-01-02",
+        "value": 2.071,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-05",
+        "value": 2.07,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-06",
+        "value": 2.073,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-07",
+        "value": 2.069,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-08",
+        "value": 2.071,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-09",
+        "value": 2.072,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-12",
+        "value": 2.073,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-13",
+        "value": 2.073,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-14",
+        "value": 2.073,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-15",
+        "value": 2.075,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-16",
+        "value": 2.072,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-19",
+        "value": 2.073,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-20",
+        "value": 2.072,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-21",
+        "value": 2.071,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-22",
+        "value": 2.075,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-23",
+        "value": 2.074,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-26",
+        "value": 2.073,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-27",
+        "value": 2.073,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-28",
+        "value": 2.075,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-29",
+        "value": 2.072,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-30",
+        "value": 2.063,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-02",
+        "value": 2.072,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-03",
+        "value": 2.07,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-04",
+        "value": 2.069,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-05",
+        "value": 2.071,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-06",
+        "value": 2.072,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-09",
+        "value": 2.07,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-10",
+        "value": 2.069,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-11",
+        "value": 2.069,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-12",
+        "value": 2.067,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-13",
+        "value": 2.067,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-16",
+        "value": 2.067,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-17",
+        "value": 2.066,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-18",
+        "value": 2.064,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-19",
+        "value": 2.067,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-20",
+        "value": 2.067,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-23",
+        "value": 2.065,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-24",
+        "value": 2.065,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-25",
+        "value": 2.063,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-26",
+        "value": 2.065,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-27",
+        "value": 2.052,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-02",
+        "value": 2.064,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-03",
+        "value": 2.065,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-04",
+        "value": 2.062,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-05",
+        "value": 2.065,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-06",
+        "value": 2.064,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-09",
+        "value": 2.062,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-10",
+        "value": 2.067,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-11",
+        "value": 2.065,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-12",
+        "value": 2.065,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-13",
+        "value": 2.065,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-16",
+        "value": 2.066,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-17",
+        "value": 2.067,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-18",
+        "value": 2.065,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-19",
+        "value": 2.067,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-20",
+        "value": 2.066,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-23",
+        "value": 2.067,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-24",
+        "value": 2.067,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-25",
+        "value": 2.069,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-26",
+        "value": 2.066,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-27",
+        "value": 2.07,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-30",
+        "value": 2.071,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-31",
+        "value": 2.058,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-01",
+        "value": 2.07,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-02",
+        "value": 2.07,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-07",
+        "value": 2.068,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-08",
+        "value": 2.069,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-09",
+        "value": 2.073,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-10",
+        "value": 2.07,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-13",
+        "value": 2.07,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-14",
+        "value": 2.068,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-15",
+        "value": 2.07,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-16",
+        "value": 2.07,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-17",
+        "value": 2.071,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-20",
+        "value": 2.069,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-21",
+        "value": 2.068,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-22",
+        "value": 2.07,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-23",
+        "value": 2.071,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-24",
+        "value": 2.068,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-27",
+        "value": 2.068,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-28",
+        "value": 2.07,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-29",
+        "value": 2.07,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-30",
+        "value": 2.057,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-04",
+        "value": 2.065,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-05",
+        "value": 2.066,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-06",
+        "value": 2.064,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-07",
+        "value": 2.066,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-08",
+        "value": 2.065,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-11",
+        "value": 2.067,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-12",
+        "value": 2.062,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-13",
+        "value": 2.064,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-14",
+        "value": 2.063,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-15",
+        "value": 2.062,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-18",
+        "value": 2.063,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-19",
+        "value": 2.06,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-20",
+        "value": 2.062,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-21",
+        "value": 2.061,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-22",
+        "value": 2.06,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-25",
+        "value": 2.061,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-26",
+        "value": 2.061,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-27",
+        "value": 2.059,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-28",
+        "value": 2.061,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-29",
+        "value": 2.053,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-01",
+        "value": 2.06,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-02",
+        "value": 2.062,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-03",
+        "value": 2.064,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-04",
+        "value": 2.063,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-05",
+        "value": 2.062,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-08",
+        "value": 2.062,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-09",
+        "value": 2.062,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-10",
+        "value": 2.065,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-11",
+        "value": 2.064,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-12",
+        "value": 2.064,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-15",
+        "value": 2.064,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-16",
+        "value": 2.066,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-17",
+        "value": 2.063,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-18",
+        "value": 2.065,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-19",
+        "value": 2.064,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-22",
+        "value": 2.067,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-23",
+        "value": 2.068,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-24",
+        "value": 2.067,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-25",
+        "value": 2.068,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-26",
+        "value": 2.069,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-29",
+        "value": 2.068,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-30",
+        "value": 2.057,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-01",
+        "value": 2.07,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-02",
+        "value": 2.07,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-03",
+        "value": 2.069,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-06",
+        "value": 2.066,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-07",
+        "value": 2.068,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-08",
+        "value": 2.067,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-09",
+        "value": 2.067,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-10",
+        "value": 2.066,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-13",
+        "value": 2.065,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-14",
+        "value": 2.067,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-15",
+        "value": 2.066,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-16",
+        "value": 2.064,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-17",
+        "value": 2.065,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-20",
+        "value": 2.063,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-21",
+        "value": 2.062,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-22",
+        "value": 2.062,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-23",
+        "value": 2.063,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-24",
+        "value": 2.062,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-27",
+        "value": 2.06,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-28",
+        "value": 2.062,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-29",
+        "value": 2.061,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-30",
+        "value": 2.061,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-31",
+        "value": 2.05,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-03",
+        "value": 2.059,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-04",
+        "value": 2.059,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-05",
+        "value": 2.061,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-06",
+        "value": 2.058,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-07",
+        "value": 2.06,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-10",
+        "value": 2.059,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-11",
+        "value": 2.057,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-12",
+        "value": 2.057,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-13",
+        "value": 2.057,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-14",
+        "value": 2.058,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-17",
+        "value": 2.059,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-18",
+        "value": 2.056,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-19",
+        "value": 2.058,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-20",
+        "value": 2.057,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-21",
+        "value": 2.061,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-24",
+        "value": 2.058,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-25",
+        "value": 2.061,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-26",
+        "value": 2.062,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-27",
+        "value": 2.06,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-28",
+        "value": 2.061,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-31",
+        "value": 2.049,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-01",
+        "value": 2.06,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-02",
+        "value": 2.062,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-03",
+        "value": 2.06,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-04",
+        "value": 2.063,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-07",
+        "value": 2.06,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-08",
+        "value": 2.061,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-09",
+        "value": 2.065,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-10",
+        "value": 2.062,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-11",
+        "value": 2.062,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-14",
+        "value": 2.064,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-15",
+        "value": 2.064,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-16",
+        "value": 2.067,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-17",
+        "value": 2.067,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-18",
+        "value": 2.067,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-21",
+        "value": 2.064,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-22",
+        "value": 2.063,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-23",
+        "value": 2.066,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-24",
+        "value": 2.065,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-25",
+        "value": 2.066,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-28",
+        "value": 2.065,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-29",
+        "value": 2.065,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-30",
+        "value": 2.054,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-01",
+        "value": 2.065,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-02",
+        "value": 2.063,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-05",
+        "value": 2.062,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-06",
+        "value": 2.062,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-07",
+        "value": 2.06,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-08",
+        "value": 2.061,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-09",
+        "value": 2.059,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-12",
+        "value": 2.06,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-13",
+        "value": 2.059,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-14",
+        "value": 2.059,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-15",
+        "value": 2.058,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-16",
+        "value": 2.058,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-19",
+        "value": 2.014,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-20",
+        "value": 2.02,
+        "unit": "percent"
+      }
+    ],
+    "EURIBOR3M": [
+      {
+        "date": "2026-01-02",
+        "value": 2.023,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-05",
+        "value": 2.022,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-06",
+        "value": 2.025,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-07",
+        "value": 2.021,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-08",
+        "value": 2.022,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-09",
+        "value": 2.024,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-12",
+        "value": 2.025,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-13",
+        "value": 2.024,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-14",
+        "value": 2.024,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-15",
+        "value": 2.027,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-16",
+        "value": 2.023,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-19",
+        "value": 2.024,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-20",
+        "value": 2.023,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-21",
+        "value": 2.022,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-22",
+        "value": 2.026,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-23",
+        "value": 2.025,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-26",
+        "value": 2.024,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-27",
+        "value": 2.024,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-28",
+        "value": 2.026,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-29",
+        "value": 2.024,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-01-30",
+        "value": 2.015,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-02",
+        "value": 2.023,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-03",
+        "value": 2.021,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-04",
+        "value": 2.021,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-05",
+        "value": 2.022,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-06",
+        "value": 2.024,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-09",
+        "value": 2.022,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-10",
+        "value": 2.02,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-11",
+        "value": 2.021,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-12",
+        "value": 2.019,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-13",
+        "value": 2.019,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-16",
+        "value": 2.019,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-17",
+        "value": 2.019,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-18",
+        "value": 2.016,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-19",
+        "value": 2.019,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-20",
+        "value": 2.02,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-23",
+        "value": 2.018,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-24",
+        "value": 2.017,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-25",
+        "value": 2.016,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-26",
+        "value": 2.018,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-02-27",
+        "value": 2.005,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-02",
+        "value": 2.017,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-03",
+        "value": 2.018,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-04",
+        "value": 2.015,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-05",
+        "value": 2.018,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-06",
+        "value": 2.017,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-09",
+        "value": 2.015,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-10",
+        "value": 2.019,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-11",
+        "value": 2.017,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-12",
+        "value": 2.018,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-13",
+        "value": 2.018,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-16",
+        "value": 2.018,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-17",
+        "value": 2.019,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-18",
+        "value": 2.018,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-19",
+        "value": 2.019,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-20",
+        "value": 2.018,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-23",
+        "value": 2.019,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-24",
+        "value": 2.019,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-25",
+        "value": 2.021,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-26",
+        "value": 2.018,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-27",
+        "value": 2.022,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-30",
+        "value": 2.023,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-03-31",
+        "value": 2.01,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-01",
+        "value": 2.021,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-02",
+        "value": 2.021,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-07",
+        "value": 2.02,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-08",
+        "value": 2.021,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-09",
+        "value": 2.024,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-10",
+        "value": 2.021,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-13",
+        "value": 2.021,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-14",
+        "value": 2.019,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-15",
+        "value": 2.021,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-16",
+        "value": 2.021,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-17",
+        "value": 2.022,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-20",
+        "value": 2.02,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-21",
+        "value": 2.019,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-22",
+        "value": 2.022,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-23",
+        "value": 2.022,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-24",
+        "value": 2.019,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-27",
+        "value": 2.02,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-28",
+        "value": 2.022,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-29",
+        "value": 2.021,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-04-30",
+        "value": 2.009,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-04",
+        "value": 2.017,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-05",
+        "value": 2.018,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-06",
+        "value": 2.016,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-07",
+        "value": 2.019,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-08",
+        "value": 2.017,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-11",
+        "value": 2.019,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-12",
+        "value": 2.015,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-13",
+        "value": 2.016,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-14",
+        "value": 2.016,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-15",
+        "value": 2.015,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-18",
+        "value": 2.015,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-19",
+        "value": 2.012,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-20",
+        "value": 2.015,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-21",
+        "value": 2.014,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-22",
+        "value": 2.013,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-25",
+        "value": 2.014,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-26",
+        "value": 2.014,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-27",
+        "value": 2.012,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-28",
+        "value": 2.014,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-05-29",
+        "value": 2.006,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-01",
+        "value": 2.013,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-02",
+        "value": 2.014,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-03",
+        "value": 2.016,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-04",
+        "value": 2.016,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-05",
+        "value": 2.015,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-08",
+        "value": 2.014,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-09",
+        "value": 2.015,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-10",
+        "value": 2.017,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-11",
+        "value": 2.016,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-12",
+        "value": 2.016,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-15",
+        "value": 2.016,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-16",
+        "value": 2.018,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-17",
+        "value": 2.015,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-18",
+        "value": 2.017,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-19",
+        "value": 2.015,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-22",
+        "value": 2.019,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-23",
+        "value": 2.02,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-24",
+        "value": 2.018,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-25",
+        "value": 2.019,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-26",
+        "value": 2.021,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-29",
+        "value": 2.019,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-06-30",
+        "value": 2.008,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-01",
+        "value": 2.021,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-02",
+        "value": 2.021,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-03",
+        "value": 2.02,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-06",
+        "value": 2.017,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-07",
+        "value": 2.019,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-08",
+        "value": 2.018,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-09",
+        "value": 2.018,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-10",
+        "value": 2.018,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-13",
+        "value": 2.017,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-14",
+        "value": 2.018,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-15",
+        "value": 2.017,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-16",
+        "value": 2.016,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-17",
+        "value": 2.016,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-20",
+        "value": 2.015,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-21",
+        "value": 2.014,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-22",
+        "value": 2.013,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-23",
+        "value": 2.015,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-24",
+        "value": 2.014,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-27",
+        "value": 2.012,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-28",
+        "value": 2.014,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-29",
+        "value": 2.014,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-30",
+        "value": 2.013,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-07-31",
+        "value": 2.002,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-03",
+        "value": 2.012,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-04",
+        "value": 2.012,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-05",
+        "value": 2.013,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-06",
+        "value": 2.011,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-07",
+        "value": 2.013,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-10",
+        "value": 2.012,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-11",
+        "value": 2.01,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-12",
+        "value": 2.01,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-13",
+        "value": 2.01,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-14",
+        "value": 2.011,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-17",
+        "value": 2.012,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-18",
+        "value": 2.009,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-19",
+        "value": 2.011,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-20",
+        "value": 2.009,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-21",
+        "value": 2.014,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-24",
+        "value": 2.011,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-25",
+        "value": 2.013,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-26",
+        "value": 2.014,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-27",
+        "value": 2.013,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-28",
+        "value": 2.013,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-08-31",
+        "value": 2.001,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-01",
+        "value": 2.012,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-02",
+        "value": 2.014,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-03",
+        "value": 2.011,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-04",
+        "value": 2.015,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-07",
+        "value": 2.012,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-08",
+        "value": 2.012,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-09",
+        "value": 2.017,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-10",
+        "value": 2.013,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-11",
+        "value": 2.013,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-14",
+        "value": 2.016,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-15",
+        "value": 2.016,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-16",
+        "value": 2.018,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-17",
+        "value": 2.018,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-18",
+        "value": 2.018,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-21",
+        "value": 2.015,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-22",
+        "value": 2.014,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-23",
+        "value": 2.017,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-24",
+        "value": 2.016,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-25",
+        "value": 2.017,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-28",
+        "value": 2.016,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-29",
+        "value": 2.017,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-09-30",
+        "value": 2.005,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-01",
+        "value": 2.016,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-02",
+        "value": 2.015,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-05",
+        "value": 2.014,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-06",
+        "value": 2.013,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-07",
+        "value": 2.012,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-08",
+        "value": 2.013,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-09",
+        "value": 2.011,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-12",
+        "value": 2.012,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-13",
+        "value": 2.011,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-14",
+        "value": 2.011,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-15",
+        "value": 2.01,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-16",
+        "value": 2.011,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-19",
+        "value": 1.985,
+        "unit": "percent"
+      },
+      {
+        "date": "2026-10-20",
+        "value": 1.99,
+        "unit": "percent"
+      }
+    ]
+  }
+}

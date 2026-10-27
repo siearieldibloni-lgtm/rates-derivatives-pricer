@@ -9,6 +9,7 @@
 | ``ENGINES``       | ``("ois_swap", "discounting")``       | :class:`PricingEngine` subclass |
 | ``RISK_MEASURES`` | ``"key_rate_dv01"``                   | :class:`RiskMeasure` subclass  |
 | ``CONVENTIONS``   | ``"EUR"``                             | :class:`CurrencyConventions`   |
+| ``SCENARIOS``     | ``"steepener"``                       | :class:`Scenario` (preset)     |
 
 Built-in components are imported lazily by :func:`load_builtin_components` on the first lookup.
 """
@@ -24,6 +25,7 @@ from rate_derivatives_pricer.core.errors import (
     ConventionError,
     UnsupportedInstrumentError,
     UnsupportedRiskMeasureError,
+    UnsupportedScenarioError,
 )
 from rate_derivatives_pricer.core.registry.base import Registry
 
@@ -35,6 +37,7 @@ if TYPE_CHECKING:
     from rate_derivatives_pricer.core.instruments.swaps import Instrument
     from rate_derivatives_pricer.core.market.interpolation import Interpolator
     from rate_derivatives_pricer.core.risk.measures import RiskMeasure
+    from rate_derivatives_pricer.core.risk.scenarios import Scenario
 
 
 _builtins_lock = RLock()
@@ -58,14 +61,16 @@ def load_builtin_components() -> None:
             from rate_derivatives_pricer.core.engines import discounting
             from rate_derivatives_pricer.core.instruments import factories
             from rate_derivatives_pricer.core.market import interpolation
-            from rate_derivatives_pricer.core.risk import measures
+            from rate_derivatives_pricer.core.risk import measures, scenarios
 
             # Currency conventions are configuration files, not classes: load them explicitly.
             currency.register_conventions_from_package_data()
+            # Preset scenarios are configuration too (core/risk/data/scenarios.json).
+            scenarios.register_scenarios_from_package_data()
         except BaseException:
             _builtins_loaded = False
             raise
-        del calendar, day_count, discounting, factories, interpolation, measures
+        del calendar, day_count, discounting, factories, interpolation, measures, scenarios
 
 
 CALENDARS: Registry[str, type[Calendar]] = Registry(
@@ -92,6 +97,9 @@ RISK_MEASURES: Registry[str, type[RiskMeasure]] = Registry(
 CONVENTIONS: Registry[str, CurrencyConventions] = Registry(
     "currency", ConventionError, load_builtin_components
 )
+SCENARIOS: Registry[str, Scenario] = Registry(
+    "scenario", UnsupportedScenarioError, load_builtin_components
+)
 
 __all__ = [
     "CALENDARS",
@@ -101,6 +109,7 @@ __all__ = [
     "INSTRUMENTS",
     "INTERPOLATORS",
     "RISK_MEASURES",
+    "SCENARIOS",
     "Registry",
     "load_builtin_components",
 ]

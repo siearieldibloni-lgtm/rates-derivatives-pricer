@@ -15,13 +15,15 @@ from rate_derivatives_pricer.core.registry import (
 
 
 def test_builtin_components_are_registered() -> None:
-    assert {"TARGET", "NULL", "WEEKENDS_ONLY"} <= set(CALENDARS.keys())
+    assert {"TARGET", "NULL", "WEEKENDS_ONLY", "US_GOVERNMENT_BOND", "US_SOFR"} <= set(
+        CALENDARS.keys()
+    )
     assert set(DAY_COUNTS.keys()) == {"ACT/360", "ACT/365F", "30/360", "30E/360"}
     assert set(INTERPOLATORS.keys()) == {"log_linear_df", "linear_zero"}
     assert "ois_swap" in INSTRUMENTS
     assert ("ois_swap", "discounting") in ENGINES
-    assert list(CONVENTIONS) == ["EUR"]
-    assert len(CONVENTIONS) == 1
+    assert list(CONVENTIONS) == ["EUR", "USD"]
+    assert len(CONVENTIONS) == 2
     assert INSTRUMENTS.kind == "instrument type"
 
 

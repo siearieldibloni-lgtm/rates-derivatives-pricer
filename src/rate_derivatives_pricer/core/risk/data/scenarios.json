@@ -1,0 +1,33 @@
+{
+  "scenarios": [
+    {
+      "name": "parallel_up",
+      "description": "Every par rate up by 100bp",
+      "points": [{"tenor": "1Y", "shift_bp": 100.0}]
+    },
+    {
+      "name": "parallel_down",
+      "description": "Every par rate down by 100bp",
+      "points": [{"tenor": "1Y", "shift_bp": -100.0}]
+    },
+    {
+      "name": "steepener",
+      "description": "2s10s steepener: -25bp up to 2Y, +25bp from 10Y, linear in between",
+      "points": [{"tenor": "2Y", "shift_bp": -25.0}, {"tenor": "10Y", "shift_bp": 25.0}]
+    },
+    {
+      "name": "flattener",
+      "description": "2s10s flattener: +25bp up to 2Y, -25bp from 10Y, linear in between",
+      "points": [{"tenor": "2Y", "shift_bp": 25.0}, {"tenor": "10Y", "shift_bp": -25.0}]
+    },
+    {
+      "name": "twist",
+      "description": "Rotation around 5Y: -25bp up to 1Y, 0 at 5Y, +25bp from 30Y, linear in between",
+      "points": [
+        {"tenor": "1Y", "shift_bp": -25.0},
+        {"tenor": "5Y", "shift_bp": 0.0},
+        {"tenor": "30Y", "shift_bp": 25.0}
+      ]
+    }
+  ]
+}

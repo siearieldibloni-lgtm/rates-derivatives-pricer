@@ -188,6 +188,51 @@ class RiskRequest(StrictModel):
     options: CalculationOptionsModel = Field(default_factory=CalculationOptionsModel)
 
 
+TENOR_PATTERN = r"^[1-9][0-9]*[DdWwMmYy]$"
+
+
+class ScenarioPointModel(StrictModel):
+    """Shift of the par rates at one tenor (linear in between, flat beyond the ends)."""
+
+    tenor: str = Field(examples=["2Y"])
+    shift_bp: FiniteFloat = Field(description="Additive par-rate shift in bp.", examples=[-25.0])
+
+
+class ScenarioModel(StrictModel):
+    """Custom scenario: a piecewise-linear shift of the par rates by tenor (ADR-033)."""
+
+    name: str = Field(min_length=1, examples=["bear_steepener"])
+    description: str = ""
+    curves: list[str] | None = Field(
+        default=None,
+        description='Curves shocked ("OIS", "EURIBOR6M"...); every curve when omitted.',
+    )
+    points: list[ScenarioPointModel] = Field(min_length=1)
+
+
+class ScenariosRequest(StrictModel):
+    """Body of ``POST /v1/risk/scenarios``. Every preset runs when no scenario is given."""
+
+    market: MarketModel
+    trade: TradeModel
+    scenarios: list[str] = Field(
+        default_factory=list,
+        examples=[["parallel_up", "steepener"]],
+        description="Preset scenarios, see /v1/catalog.",
+    )
+    custom_scenarios: list[ScenarioModel] = Field(default_factory=list)
+    options: CalculationOptionsModel = Field(default_factory=CalculationOptionsModel)
+
+
+class CarryRequest(StrictModel):
+    """Body of ``POST /v1/risk/carry`` (unchanged curve hypothesis, ADR-034)."""
+
+    market: MarketModel
+    trade: TradeModel
+    horizon: str = Field(default="3M", pattern=TENOR_PATTERN, examples=["3M", "1Y"])
+    options: CalculationOptionsModel = Field(default_factory=CalculationOptionsModel)
+
+
 # --------------------------------------------------------------------------- responses
 class Diagnostics(BaseModel):
     """Permanent diagnostics block of every response envelope."""
@@ -256,6 +301,14 @@ class PricingMethod(BaseModel):
     method: str
 
 
+class ScenarioInfo(BaseModel):
+    """Preset scenario."""
+
+    name: str
+    description: str
+    points: list[ScenarioPointModel]
+
+
 class CatalogResult(BaseModel):
     """Supported components, generated from the registries."""
 
@@ -268,6 +321,7 @@ class CatalogResult(BaseModel):
     calendars: list[str]
     day_counts: list[str]
     risk_measures: list[str]
+    scenarios: list[ScenarioInfo] = Field(default_factory=list)
 
 
 class SnapshotListResult(BaseModel):
@@ -408,3 +462,52 @@ class RiskResult(BaseModel):
     present_value: float
     bump: BumpOptionsModel
     measures: list[RiskMeasureResult]
+
+
+class QuoteShiftResult(BaseModel):
+    """Shift a scenario applied to one calibration quote."""
+
+    curve: str
+    label: str
+    instrument_type: str
+    shift_bp: float
+
+
+class ScenarioResultModel(BaseModel):
+    """Full revaluation under one scenario."""
+
+    name: str
+    description: str
+    curves: list[str] | None
+    points: list[ScenarioPointModel]
+    present_value: float
+    pnl: float
+    shifts: list[QuoteShiftResult]
+
+
+class ScenariosResult(BaseModel):
+    """Result of ``POST /v1/risk/scenarios``."""
+
+    instrument_type: str
+    currency: str
+    valuation_date: dt.date
+    present_value: float
+    scenarios: list[ScenarioResultModel]
+
+
+class CarryResult(BaseModel):
+    """Result of ``POST /v1/risk/carry`` (trade currency; total = carry + roll-down)."""
+
+    instrument_type: str
+    currency: str
+    valuation_date: dt.date
+    hypothesis: str
+    horizon: str
+    horizon_date: dt.date
+    present_value: float
+    horizon_present_value: float
+    cashflows: float
+    total: float
+    carry: float
+    rolldown: float
+    assumed_fixings: dict[str, float]

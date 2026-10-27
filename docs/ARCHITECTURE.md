@@ -46,7 +46,7 @@ Le flux est fonctionnel : chaque étape prend des entrées et renvoie une sortie
 
 | Contrat | Responsabilité | Implémentations v1 |
 |---|---|---|
-| `Calendar` | Dire si une date est ouvrée ; avancer de n jours ouvrés | `TargetCalendar`, `UsGovernmentCalendar`, `JointCalendar` |
+| `Calendar` | Dire si une date est ouvrée ; avancer de n jours ouvrés | `TargetCalendar`, `UsGovernmentBondCalendar`, `UsSofrCalendar` (ADR-032), `JointCalendar` |
 | `DayCountConvention` | `year_fraction(d1, d2)` | `Act360`, `Act365Fixed`, `Thirty360` |
 | `BusinessDayConvention` (enum) | Ajuster une date non ouvrée | Following, ModifiedFollowing, Preceding |
 | `Tenor` / `Frequency` | « 3M », « 1Y », « 6M » avec arithmétique de dates | objet valeur |
@@ -106,7 +106,8 @@ Cashflow (abstrait) : payment_date, amount(env: MarketEnvironment)
 | `RiskMeasure` | `compute(instrument, snapshot, pricer, settings) -> RiskResult` ; une classe par mesure, enregistrée dans `RISK_MEASURES` | `measures.py` |
 | Mesures (phase 2) | `ParallelDV01`, `KeyRateDV01`, `CurveSpecificDV01` (actualisation vs projection), `Convexity` | `measures.py` |
 | `RiskEngine` | Orchestre les mesures sur un trade, mémorise les valorisations partagées entre mesures, renvoie un `RiskReport` | `engine.py` |
-| Phase 3 | `ScenarioPnL`, `Scenario` (parallèle, steepener, flattener, twist), `CarryRolldown` | à venir |
+| `Scenario` / `ScenarioPnL` | Choc des par rates linéaire par morceaux en ténor (presets parallèle ±, steepener, flattener, twist dans `risk/data/scenarios.json`, registre `SCENARIOS`) ; revalorisation complète sous chaque scénario (ADR-033) | `scenarios.py` |
+| `CarryRolldown` | Vieillit le trade jusqu'à un horizon le long d'une courbe inchangée en espace de ténors ; `total = carry + roll-down` (ADR-034). Dépend d'un `HorizonValuer` abstrait (PV, flux payés, intérêts courus) | `carry.py` |
 
 Le risque dépend d'une fonction `pricer` abstraite `(instrument, snapshot) -> PV`, pas des moteurs : remplacer le moteur
 ou le produit ne demande **aucun changement** dans `risk/`. Ajouter une mesure = un fichier qui l'enregistre dans
@@ -117,8 +118,10 @@ Définitions : le **par-rate DV01** choque les cotations de marché puis re-boot
 le zero-rate DV01 choque directement les taux zéro de la courbe. La v1 utilise le bump-and-reprice
 (différences finies) ; la différentiation automatique est hors v1 mais ne doit pas être interdite par le design.
 
-Carry/roll-down : exige une hypothèse explicite (courbe inchangée en espace de tenors vs forwards réalisés), à
-trancher et consigner dans DECISIONS.md en phase 3.
+Carry/roll-down : hypothèse **courbe inchangée en espace de ténors** (ADR-034) : à l'horizon, mêmes cotations
+re-bootstrapées à la nouvelle date, fixings de l'horizon égaux aux cotations du jour ; le carry est l'intérêt couru
+net, le roll-down le reste du P&L. Les scénarios et le carry passent, comme les mesures, par des abstractions de
+pricer construites par `services/`.
 
 ## 9. Registries et factories (`core/registry`)
 
@@ -129,6 +132,7 @@ trancher et consigner dans DECISIONS.md en phase 3.
 | `InterpolatorRegistry` | `"log_linear_df"` -> classe |
 | `RISK_MEASURES` | `"key_rate_dv01"` -> classe (nom inconnu : `UnsupportedRiskMeasureError`, hérite de `UnsupportedInstrumentError`) |
 | `ConventionsRegistry` | `"EUR"`, `"USD"` -> `CurrencyConventions` |
+| `SCENARIOS` | `"steepener"` -> `Scenario` (presets lus dans `core/risk/data/scenarios.json` ; nom inconnu : `UnsupportedScenarioError`) |
 
 Enregistrement par décorateur : ajouter un composant = ajouter un fichier, sans modifier de ligne existante
 (principe Open/Closed).
@@ -143,6 +147,7 @@ RatesPricerError
  ├── CalibrationError          (porte le pilier fautif et le résidu)
  ├── UnsupportedInstrumentError
  │    └── UnsupportedRiskMeasureError
+ │         └── UnsupportedScenarioError
  ├── PricingError
  └── RiskComputationError
 ```
@@ -178,7 +183,7 @@ rate-derivatives-pricer/
 │   │   ├── market/ (quotes, indices, curves, interpolation, bootstrap, providers)
 │   │   ├── instruments/ (cashflows, legs, swaps)
 │   │   ├── engines/  registry/  errors.py
-│   │   ├── risk/ (bumps, measures, engine)
+│   │   ├── risk/ (bumps, measures, engine, scenarios, carry, data/scenarios.json)
 │   ├── services/  sdk/  ui/
 │   └── api/   (logging_config.py : configuration du logging et request_id, en place depuis la phase 0)
 └── tests/  unit/  integration/  validation/  api/  fixtures/

@@ -76,6 +76,22 @@ class Coupon(Cashflow):
         """``N * rate * tau``."""
         return self.notional * self.rate(env) * self.year_fraction
 
+    def accrual_overlap(self, start: date, end: date) -> tuple[date, date] | None:
+        """Part ``[a, b)`` of the accrual period inside ``[start, end)``, ``None`` if empty."""
+        overlap_start, overlap_end = max(start, self.accrual_start), min(end, self.accrual_end)
+        return (overlap_start, overlap_end) if overlap_start < overlap_end else None
+
+    def accrued_amount(self, env: MarketEnvironment, start: date, end: date) -> float:
+        """Unsigned interest accrued over the part of the accrual period inside ``[start, end)``.
+
+        ``N * rate * tau(a, b)`` on the overlap ``[a, b)``, with the coupon rate of the whole
+        period (fixed rate, or the Ibor fixing); used by the carry of carry/roll-down (ADR-034).
+        """
+        overlap = self.accrual_overlap(start, end)
+        if overlap is None:
+            return 0.0
+        return self.notional * self.rate(env) * self.day_count.year_fraction(*overlap)
+
 
 @dataclass(frozen=True, slots=True)
 class FixedCoupon(Coupon):
@@ -127,16 +143,7 @@ class OvernightCompoundedCoupon(Coupon):
             start_df, end_df = curve.discount_factors([self.accrual_start, self.accrual_end])
             return float(start_df / end_df)
 
-        # Observation dates d_0 .. d_{n-1}; the end date closes the last overnight period.
-        observation_dates = [
-            d
-            for d in self.index.fixing_calendar.business_days(self.accrual_start, self.accrual_end)
-            if d < self.accrual_end
-        ]
-        if not observation_dates or observation_dates[0] != self.accrual_start:
-            observation_dates.insert(0, self.accrual_start)
-        period_ends = [*observation_dates[1:], self.accrual_end]
-
+        observation_dates, period_ends = self._overnight_periods()
         factor, i, n = 1.0, 0, len(observation_dates)
         # Realised part: fixings strictly before the valuation date are mandatory.
         while i < n and observation_dates[i] < valuation_date:
@@ -155,6 +162,53 @@ class OvernightCompoundedCoupon(Coupon):
             start_df, end_df = curve.discount_factors([observation_dates[i], self.accrual_end])
             factor *= float(start_df / end_df)
         return factor
+
+    def _overnight_periods(self) -> tuple[list[date], list[date]]:
+        """Observation dates ``d_0 .. d_{n-1}`` and the ends of their overnight periods.
+
+        The accrual end closes the last overnight period.
+        """
+        observation_dates = [
+            d
+            for d in self.index.fixing_calendar.business_days(self.accrual_start, self.accrual_end)
+            if d < self.accrual_end
+        ]
+        if not observation_dates or observation_dates[0] != self.accrual_start:
+            observation_dates.insert(0, self.accrual_start)
+        return observation_dates, [*observation_dates[1:], self.accrual_end]
+
+    def accrued_amount(self, env: MarketEnvironment, start: date, end: date) -> float:
+        """Unsigned interest accrued over the part of the accrual period inside ``[start, end)``.
+
+        Daily compounding restricted to the overlap ``[a, b)``: each overnight period
+        ``[d_i, d_{i+1})`` contributes ``1 + r_i * delta(max(d_i, a), min(d_{i+1}, b))``, and the
+        amount is ``N * (prod - 1)``. ``r_i`` is the fixing of ``d_i`` when known (mandatory
+        before the valuation date), otherwise the projected overnight forward. Used by the carry
+        of carry/roll-down (ADR-034).
+
+        Raises:
+            MarketDataError: If a fixing before the valuation date is missing.
+        """
+        overlap = self.accrual_overlap(start, end)
+        if overlap is None:
+            return 0.0
+        overlap_start, overlap_end = overlap
+        day_count = self.index.day_count
+        factor = 1.0
+        for fixing_date, period_end in zip(*self._overnight_periods(), strict=True):
+            lower, upper = max(fixing_date, overlap_start), min(period_end, overlap_end)
+            if lower >= upper:
+                continue
+            fixing = env.fixing(self.index.name, fixing_date)
+            if fixing_date < env.valuation_date and fixing is None:
+                self._realised_growth(env, fixing_date, period_end)  # raises: missing fixing
+            if fixing is None:
+                # Projected overnight forward of the whole overnight period.
+                fixing = env.projection_curve(self.index.name).forward_rate(
+                    fixing_date, period_end, day_count
+                )
+            factor *= 1.0 + fixing * day_count.year_fraction(lower, upper)
+        return self.notional * (factor - 1.0)
 
     def _realised_growth(
         self, env: MarketEnvironment, fixing_date: date, period_end: date

@@ -1,0 +1,14 @@
+{
+  "description": "Sample USD SOFR OIS trades (rates in decimal, notionals in USD).",
+  "trades": [
+    {"id": "SOFR-2Y-PAYER", "type": "ois_swap",
+     "params": {"currency": "USD", "notional": 25000000, "fixed_rate": 0.0325,
+                "direction": "pay_fixed", "maturity": "2Y"}},
+    {"id": "SOFR-10Y-RECEIVER", "type": "ois_swap",
+     "params": {"currency": "USD", "notional": 10000000, "fixed_rate": 0.035,
+                "direction": "receive_fixed", "maturity": "10Y"}},
+    {"id": "SOFR-SEASONED-1Y", "type": "ois_swap",
+     "params": {"currency": "USD", "notional": 50000000, "fixed_rate": 0.04,
+                "direction": "pay_fixed", "maturity": "1Y", "start_date": "2026-03-30"}}
+  ]
+}

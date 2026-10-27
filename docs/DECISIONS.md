@@ -392,3 +392,119 @@ Statuts : Acceptée, Remplacée, Reportée.
     l'indice ne re-calibrent pas la courbe Euribor (ADR-027).
 - **Conséquences :** La validation de phase 2 tourne en ~3 minutes (`uv run pytest -m validation`, 77 tests dont
   36 de courbes).
+
+### ADR-032 : Conventions USD SOFR et calendriers US, ajoutés par configuration
+- **Statut :** Acceptée (27/10/2026, validées par le porteur du projet avant implémentation, règle 7 de CLAUDE.md)
+- **Contexte :** La phase 3 doit ajouter l'USD (SOFR) **sans modifier la logique de calcul** (ADR-002) et le valider
+  contre QuantLib avec les tolérances de l'EUR. Les conventions ne se devinent pas ; elles doivent coïncider avec
+  QuantLib (`Sofr()`, `OISRateHelper`, `MakeOIS`).
+- **Décision :** Conventions décrites dans `core/conventions/data/USD.json` :
+  - **Calendrier `US_SOFR`** pour les fixings, les échéanciers et les paiements : le calendrier du marché des
+    emprunts d'État américains (`US_GOVERNMENT_BOND`, recommandations SIFMA) **fermé tous les Vendredis saints**.
+    Le marché obligataire n'a qu'une fermeture anticipée le Vendredi saint qui tombe le premier vendredi du mois
+    (publication des chiffres de l'emploi), mais le SOFR n'est pas publié ce jour-là. C'est `UnitedStates(SOFR)` de
+    QuantLib.
+  - `US_GOVERNMENT_BOND` : week-ends, 1er janvier (lundi s'il tombe un dimanche, pas de report au vendredi), Martin
+    Luther King, Presidents' Day, Vendredi saint (sauf l'exception ci-dessus, depuis 1996), Memorial Day, Juneteenth
+    (depuis 2022), 4 juillet, Labor Day, Columbus Day, Veterans Day (lundi s'il tombe un dimanche), Thanksgiving,
+    Noël, et trois fermetures exceptionnelles (11/06/2004, 30/10/2012, 05/12/2018). Le 09/01/2025 (obsèques du
+    président Carter) n'était qu'une fermeture anticipée.
+  - **Spot lag** 2 jours ouvrés ; **OIS** annuel/annuel, Act/360 sur les deux jambes, Modified Following, fin de mois,
+    génération *backward*, **payment lag 2 jours ouvrés**, composition quotidienne sans lookback, lockout ni
+    observation shift ; **dépôt ON SOFR** T+0, Act/360 ; mêmes ténors de calibration que l'EUR.
+  - **Pas de section `ibor`** : le LIBOR a disparu ; un IRS USD est refusé (`ConventionError`, ADR-027).
+  - Les deux calendriers sont des composants enregistrés (`CALENDARS`), comme `TARGET` : ce sont des conventions,
+    pas de la logique de calcul. Aucune ligne du bootstrap, des coupons, des moteurs ou du risque n'a changé pour
+    l'USD.
+  - Snapshot **synthétique** `data/market/USD_2026-10-19.json` (SOFR ~3,6 %, courbe 3,24 %-3,63 %, fixings SOFR à
+    2 décimales du 02/01/2026 au 16/10/2026 sur le calendrier `US_SOFR`) et trades d'exemple
+    `data/trades/usd_samples.json`.
+- **Conséquences :** L'oracle QuantLib est paramétré par devise (`OVERNIGHT_MARKETS`). Le dashboard prend la devise
+  du snapshot sélectionné et ne propose que l'OIS en USD.
+
+### ADR-033 : Scénarios de marché et P&L de scénario
+- **Statut :** Acceptée (27/10/2026, définitions validées par le porteur du projet)
+- **Contexte :** La phase 3 demande une revalorisation sous scénarios nommés (parallèle ±, steepener, flattener,
+  twist), cohérente avec le DV01 et la convexité sur petits chocs.
+- **Décision :**
+  - Un `Scenario` est un choc **additif sur les par rates** (cotations des instruments de calibration), comme les
+    bumps du risque (ADR-029), **linéaire par morceaux en ténor** entre ses points et **plat au-delà** du premier et
+    du dernier. Le ténor est mesuré en années (`nD/365`, `7n/365`, `n/12`, `n`), uniquement comme abscisse des
+    formes. Un seul point donne un choc parallèle. Par défaut toutes les courbes sont choquées (OIS et indices Ibor) ;
+    un scénario peut se restreindre à certaines courbes (`curves`).
+  - **Presets** (configuration `core/risk/data/scenarios.json`, registre `SCENARIOS`) : `parallel_up` /
+    `parallel_down` ±100 bp ; `steepener` −25 bp jusqu'au 2Y, +25 bp à partir du 10Y ; `flattener` l'inverse ;
+    `twist` rotation autour du 5Y : −25 bp jusqu'au 1Y, 0 au 5Y, +25 bp à partir du 30Y. Des scénarios
+    personnalisés (points ténor → bp) se passent dans la requête.
+  - `ScenarioPnL` revalorise **complètement** (re-bootstrap puis pricing, aucune approximation) avec le même pricer
+    abstrait que les mesures de risque ; P&L = PV choqué − PV de base.
+  - Nom inconnu, définition invalide, doublon de nom ou scénario qui ne sélectionne aucune cotation :
+    `UnsupportedScenarioError` (sous-classe d'`UnsupportedRiskMeasureError`), HTTP 400 `UNSUPPORTED_SCENARIO`.
+  - **Vérification de Taylor** : pour des chocs parallèles de 1 à 5 bp, `P&L ≈ DV01 dx + convexité dx² / 2` à
+    `TAYLOR_REL = 1e-4` relatif près (`tests/validation/tolerances.py`). Écart mesuré à ±5 bp : 6,2e-7 (IRS 2Y),
+    3,0e-6 (7Y), 3,3e-5 (30Y), c'est-à-dire le terme d'ordre 3 négligé ; 0 à ±1 bp (mêmes marchés choqués que le
+    DV01 et la convexité).
+  - Second snapshot **synthétique** `EUR_2026-10-20` (le marché du 19/10 un jour ouvré plus tard, cotations
+    déplacées de +0,5 bp au court terme à +2 bp à partir du 10Y, fixing €STR du 19/10 et fixings Euribor du 20/10
+    ajoutés) pour la comparaison de deux snapshots du dashboard.
+- **Conséquences :** Ajouter un preset revient à éditer le JSON. Les marchés choqués ne passent pas par le cache.
+
+### ADR-034 : Carry et roll-down, hypothèse de la courbe inchangée
+- **Statut :** Acceptée (27/10/2026, hypothèse validée par le porteur du projet ; tranche le point laissé ouvert
+  par ADR-010)
+- **Contexte :** Le carry/roll-down exige une hypothèse sur le marché à l'horizon : courbe inchangée en espace de
+  ténors, ou forwards réalisés.
+- **Décision :**
+  - **Courbe inchangée en espace de ténors** : à l'horizon `t + H` (calendrier de la devise, *following* ; 3M par
+    défaut) chaque cotation garde sa valeur et les courbes sont re-bootstrapées à la nouvelle date. Par cohérence,
+    les fixings de `[t, t + H)` non encore publiés valent la **cotation du jour** de leur indice : le dépôt ON pour
+    l'indice overnight (€STR, SOFR), le dépôt de l'indice pour un Ibor (Euribor 6M). Les fixings publiés sont gardés.
+  - `total = PV(t+H) + flux payés dans (t, t+H] (non actualisés) − PV(t)` ;
+    `carry = intérêts courus nets sur [t, t+H)` (jambe fixe contre jambe flottante, aux fixings ci-dessus, non
+    actualisés) ; `roll-down = total − carry`. Le carry est le revenu de la position ; le roll-down est la variation
+    de sa valeur *clean* en vieillissant le long d'une courbe inchangée, y compris, pour un swap hors marché, son
+    rapprochement du pair (*pull to par*).
+  - Les forwards réalisés ont été écartés : sous cette hypothèse le P&L se réduit au financement et le roll-down est
+    nul, ce qui n'informe pas un desk.
+  - Le risque reste indépendant des moteurs : `CarryRolldown` dépend d'un `HorizonValuer` abstrait (PV, flux payés,
+    intérêts courus). `PricingEngine` gagne `cashflows_paid` et `accrued_interest` (par défaut :
+    `UnsupportedInstrumentError`) et les coupons `accrued_amount` (sous-période ; composition quotidienne restreinte
+    à la sous-période pour l'overnight).
+  - **Cas calculable à la main** (test) : courbe €STR plate à 2 %, payeur d'un OIS 1Y à 3 %, horizon 3M. Sur
+    `[21/10/2026, 19/01/2027)` le payeur verse `1e8 × 3 % × 90/360 = 750 000` et reçoit `1e8 × (Π(1 + 2 % δ_i) − 1)`
+    ≈ 500 000 : le carry égale la différence à 1e-12 près. Sur une courbe plate les deux hypothèses coïncident
+    presque : le total est quasi nul et le roll-down compense le carry.
+  - Le snapshot doit contenir le dépôt overnight (`MARKET_DATA_INVALID` sinon).
+- **Conséquences :** Un swap dont tous les flux sont payés avant l'horizon a un PV nul à l'horizon et un total égal
+  à ses flux moins son PV. Le résultat porte `hypothesis: "unchanged_curve"` et les fixings supposés.
+
+### ADR-035 : Contrat HTTP de la phase 3
+- **Statut :** Acceptée (27/10/2026, précise ADR-011, ADR-025 et ADR-030)
+- **Décision :** Changements additifs, aucun ne rompt `/v1` :
+  - `POST /v1/risk/scenarios` : `scenarios` (presets ; tous si rien n'est demandé) et `custom_scenarios` (`name`,
+    `description`, `curves`, `points: [{tenor, shift_bp}]`) ; résultat : PV de base puis, par scénario, PV, P&L et
+    choc appliqué à chaque cotation.
+  - `POST /v1/risk/carry` : `horizon` (ténor `^[1-9][0-9]*[DWMY]$`, `"3M"` par défaut) ; résultat : `carry`,
+    `rolldown`, `total`, PV aujourd'hui et à l'horizon, flux payés, date d'horizon, fixings supposés, `hypothesis`.
+  - Diagnostics habituels ; `curve_cache` à `null` ; `timings_ms` : `market_data`, `scenarios` ou `carry`, `total`.
+    Un événement `calculation_audit` par requête (`calculation` : `"scenarios"` ou `"carry_rolldown"`).
+  - `/v1/catalog` publie `scenarios` (nom, description, points) et la devise `USD` (calendrier `US_SOFR`, indice
+    `SOFR`, pas d'indice Ibor).
+  - Nouveau code `400 UNSUPPORTED_SCENARIO`, traduit avant `UNSUPPORTED_RISK_MEASURE`.
+  - SDK : `PricerClient.scenarios(...)`, `PricerClient.carry_rolldown(...)`, constructeur `scenario(...)`, exception
+    `UnsupportedScenarioError` (sous-classe d'`UnsupportedRiskMeasureError`).
+- **Conséquences :** Le dashboard gagne les onglets Scenarios (P&L et matrice des chocs), Carry (cascade carry +
+  roll-down) et Compare (deux snapshots de même devise) ; une rupture de contrat casse `tests/api/test_phase3.py`.
+
+### ADR-036 : Validation contre QuantLib, bilan de la phase 3
+- **Statut :** Acceptée (27/10/2026, applique ADR-014)
+- **Décision :**
+  - Tolérances **inchangées** pour l'USD (critère de la roadmap : mêmes tolérances que l'EUR), plus une constante
+    nouvelle, `TAYLOR_REL = 1e-4` (ADR-033). Écarts maximaux mesurés sur 9 marchés USD (3 dates de valorisation dont
+    la veille du Vendredi saint 2026, jour sans SOFR, x 3 chocs parallèles) :
+    - calendriers `US_GOVERNMENT_BOND` et `US_SOFR` : **égalité exacte** jour par jour de 1995 à 2060 ;
+    - DF de la courbe SOFR : **2,4e-13** (`log_linear_df`) et **1,9e-12** (`linear_zero`) ; critère 1e-10 ;
+    - 1 404 OIS SOFR spot, plus des swaps déjà commencés (dont un qui court sur le Vendredi saint) et forward :
+      PV/notionnel **2,6e-13**, par rate **3,0e-11** relatif, annuité **1,0e-13** relatif ; échéanciers à égalité
+      exacte ; critère 1e-8.
+- **Conséquences :** `uv run pytest -m validation` couvre désormais l'EUR et l'USD.

@@ -27,6 +27,7 @@ Contrat HTTP, correspondance des erreurs, observabilité et spécification des l
 | POST | `/v1/price` | Pricing d'un trade | 1 |
 | POST | `/v1/risk` | Mesures de risque sur un trade | 2 |
 | POST | `/v1/risk/scenarios` | Revalorisation sous scénarios nommés | 3 |
+| POST | `/v1/risk/carry` | Carry et roll-down sur un horizon (courbe inchangée) | 3 |
 | POST | `/v1/batch/price` | Pricing de plusieurs trades, résultat partiel par trade | 4 |
 | GET | `/v1/cache/stats` | Statistiques du cache de courbes | 4 |
 | DELETE | `/v1/cache` | Vidage du cache de courbes | 4 |
@@ -143,6 +144,52 @@ POST /v1/risk
   `diagnostics.timings_ms` (`market_data`, `risk`, `total`). Un key-rate prend de l'ordre de la seconde pour un trade
   court et quelques secondes pour un trade de 30 ans (ADR-028).
 
+### 3.3 Scénarios : `POST /v1/risk/scenarios` (phase 3)
+
+```
+POST /v1/risk/scenarios
+{
+  "market":   { "snapshot": "EUR_2026-10-19" },
+  "trade":    { "type": "vanilla_irs", "params": { ... } },
+  "scenarios": ["parallel_up", "steepener"],
+  "custom_scenarios": [
+    { "name": "bear_steepener", "curves": ["OIS", "EURIBOR6M"],
+      "points": [{ "tenor": "2Y", "shift_bp": 0 }, { "tenor": "10Y", "shift_bp": 30 }] }
+  ]
+}
+```
+
+- Un scénario choque **additivement les par rates** des cotations de calibration, linéairement en ténor entre ses
+  points et à plat au-delà (un seul point = choc parallèle), puis re-bootstrap et revalorise complètement (ADR-033).
+- Presets (`/v1/catalog`, `scenarios`) : `parallel_up` / `parallel_down` (±100 bp), `steepener` (−25 bp ≤ 2Y,
+  +25 bp ≥ 10Y), `flattener` (l'inverse), `twist` (−25 bp ≤ 1Y, 0 au 5Y, +25 bp ≥ 30Y). Sans `scenarios` ni
+  `custom_scenarios`, tous les presets sont calculés.
+- `curves` (optionnel) restreint le choc à certaines courbes (`OIS`, `EURIBOR6M`...) ; par défaut toutes.
+- Le résultat contient `present_value` (base) et, par scénario dans l'ordre demandé (presets puis personnalisés) :
+  `name`, `description`, `curves`, `points`, `present_value`, `pnl` (= PV choqué − PV de base) et `shifts` (choc
+  appliqué à chaque cotation : `curve`, `label`, `instrument_type`, `shift_bp`).
+
+### 3.4 Carry et roll-down : `POST /v1/risk/carry` (phase 3)
+
+```
+POST /v1/risk/carry
+{ "market": { "snapshot": "EUR_2026-10-19" }, "trade": { ... }, "horizon": "3M" }
+```
+
+- Hypothèse **courbe inchangée en espace de ténors** (ADR-034) : à `t + horizon` les cotations gardent leur valeur
+  et les courbes sont re-bootstrapées ; les fixings de `[t, t + horizon)` non publiés valent la cotation du jour de
+  leur indice (dépôt ON, dépôt Euribor).
+- `total = horizon_present_value + cashflows − present_value` ; `carry` = intérêts courus nets sur l'horizon ;
+  `rolldown = total − carry`. Montants en devise du trade, flux de l'horizon non actualisés.
+- Le résultat porte aussi `horizon_date`, `assumed_fixings` (taux supposé par indice, décimal) et
+  `hypothesis: "unchanged_curve"`. Un snapshot sans dépôt overnight donne `MARKET_DATA_INVALID`.
+
+### 3.5 USD (phase 3)
+
+Un snapshot USD (`USD_2026-10-19`) contient un dépôt ON SOFR et des OIS SOFR ; un trade USD porte
+`"currency": "USD"`. Conventions : ADR-032 (calendrier `US_SOFR`, payment lag 2 jours). Il n'y a pas d'indice Ibor en
+USD : un `vanilla_irs` USD est refusé (`INVALID_TRADE_DEFINITION`).
+
 ## 4. Enveloppe de réponse
 
 ```
@@ -174,6 +221,7 @@ endpoints `/v1/*` utilisent cette enveloppe ; `/health` et `/ready` renvoient `{
 | Validation Pydantic (JSON mal formé, champ manquant) | 422 | `VALIDATION_ERROR` |
 | `MarketDataError` | 422 | `MARKET_DATA_INVALID` |
 | `ConventionError`, `ScheduleError` | 422 | `INVALID_TRADE_DEFINITION` |
+| `UnsupportedScenarioError` | 400 | `UNSUPPORTED_SCENARIO` (preset inconnu, scénario mal défini ou en double, ou qui ne choque aucune cotation) |
 | `UnsupportedRiskMeasureError` | 400 | `UNSUPPORTED_RISK_MEASURE` (mesure inconnue ; `details.available` liste les mesures) |
 | `UnsupportedInstrumentError` | 400 | `UNSUPPORTED_INSTRUMENT` |
 | `CalibrationError` | 422 | `CALIBRATION_FAILED` (pilier et résidu) |
@@ -268,6 +316,9 @@ risk   = client.risk(market=..., trade=..., measures=["key_rate_dv01"])
   `version`) et le constructeur de trade `ois_swap(...)`.
 - Phase 2 : `PricerClient.risk(market, trade, measures, bump=None, options=None)`, le constructeur `vanilla_irs(...)`
   et l'exception `UnsupportedRiskMeasureError`.
+- Phase 3 : `PricerClient.scenarios(market, trade, scenarios=(), custom_scenarios=(), options=None)`,
+  `PricerClient.carry_rolldown(market, trade, horizon="3M", options=None)`, le constructeur
+  `scenario(name, {"2Y": 0.0, "10Y": 30.0}, curves=None)` et l'exception `UnsupportedScenarioError`.
 - Timeouts et retries configurables ; version du SDK vérifiée contre `/v1/version`.
 - Le SDK sert aussi de test d'intégration vivant : Streamlit l'utilise, donc toute rupture de contrat se voit immédiatement.
 
