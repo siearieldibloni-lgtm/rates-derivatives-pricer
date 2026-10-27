@@ -6,8 +6,9 @@ service FastAPI, SDK Python et dashboard Streamlit.
 > Statut : **Phase 0 terminée** (outillage, CI, logging). **Phase 1 terminée** (swap OIS €STR de bout en bout :
 > cotations -> courbe -> PV -> API -> SDK -> dashboard, validé contre QuantLib). **Phase 2 terminée** (IRS vanille
 > contre Euribor 3M/6M, bootstrap multi-courbes, risque par bump-and-reprice : DV01 parallèle, par bucket, par courbe,
-> convexité ; validée contre QuantLib). **Phase 3 à venir** (scénarios, carry/roll-down, USD).
-> Voir `docs/ROADMAP.md`.
+> convexité ; validée contre QuantLib). **Phase 3 terminée** (scénarios de courbe, carry/roll-down sous l'hypothèse de
+> courbe inchangée, USD SOFR ajouté par configuration et validé contre QuantLib). **Phase 4 à venir** (Docker,
+> observabilité, pricing batch, dashboard complet). Voir `docs/ROADMAP.md`.
 >
 > Les données de marché fournies (`data/market/EUR_2026-10-19.json`, `EUR_2026-10-20.json`, `USD_2026-10-19.json`)
 > sont **synthétiques** (ADR-023, ADR-032, ADR-033).
@@ -21,7 +22,8 @@ service FastAPI, SDK Python et dashboard Streamlit.
 
 ## Périmètre de la v1
 
-- Produits : swaps OIS, IRS vanilles (Euribor 3M/6M, multi-courbes). Devise : EUR (USD par configuration en phase 3).
+- Produits : swaps OIS, IRS vanilles (Euribor 3M/6M, multi-courbes). Devises : EUR, et USD (swaps OIS SOFR) ajouté
+  par configuration.
 - Risque : bump-and-reprice sur les instruments de calibration (par rates), avec re-bootstrap.
 - Python + NumPy pur. QuantLib utilisée uniquement comme oracle de validation dans les tests.
 - API sans état avec cache de courbes en mémoire.

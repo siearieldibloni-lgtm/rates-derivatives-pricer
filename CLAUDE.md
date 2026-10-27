@@ -28,10 +28,14 @@ Package : `rate_derivatives_pricer` (repo : `rate-derivatives-pricer`).
 - **Phase 2 (IRS vanille, multi-courbes, risque de base) : TERMINÉE et fusionnée** (PR #7). IRS contre Euribor
   3M/6M, bootstrap multi-courbes, `/v1/risk` (DV01 parallèle / par bucket / par courbe, convexité) ; 425 tests verts
   dont la validation QuantLib, couverture totale 96 %, CI verte.
-- **Phase courante : 3 (risque avancé : scénarios, carry/roll-down, USD par configuration)**. Branche à créer :
-  `phase-3-advanced-risk`.
+- **Phase 3 (risque avancé : scénarios, carry/roll-down, USD par configuration) : TERMINÉE et fusionnée** (PR #9).
+  `/v1/risk/scenarios`, `/v1/risk/carry`, USD SOFR par configuration ; 533 tests verts dont la validation QuantLib,
+  couverture totale 95 %, CI verte.
+- **Phase courante : 4 (industrialisation : Docker, observabilité, batch, dashboard complet)**. Branche à créer :
+  `phase-4-industrialization`.
 - Conventions EUR dans `core/conventions/data/EUR.json` (ADR-019, Euribor et IRS : ADR-027) ; fixings et composition
-  overnight : ADR-020 ; bootstrap multi-courbes : ADR-028 ; définitions du risque : ADR-029.
+  overnight : ADR-020 ; bootstrap multi-courbes : ADR-028 ; définitions du risque : ADR-029. USD (SOFR) dans
+  `USD.json` (ADR-032) ; scénarios : ADR-033 ; hypothèse de carry/roll-down (courbe inchangée) : ADR-034.
 - Logging : `rate_derivatives_pricer.api.logging_config` (`configure_logging`, `request_context`). Le cœur se
   contente de `logging.getLogger(__name__)` ; le middleware `api/middleware.py` positionne le `request_id`.
 - Tolérances de validation : uniquement dans `tests/validation/tolerances.py`.
