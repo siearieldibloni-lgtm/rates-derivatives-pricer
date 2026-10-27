@@ -29,3 +29,8 @@ DV01_REL = 1e-6
 # first derivative evaluated with different bumps, so they differ by the third-order terms of the
 # central scheme; relative to the parallel DV01 (documented in ADR-029).
 KEY_RATE_SUM_REL = 1e-6
+
+# Scenario P&L against its second-order Taylor expansion with the parallel DV01 and convexity,
+# for parallel scenarios of 1 to 5bp (ROADMAP phase 3). The neglected third-order term and the
+# finite-difference error of DV01 and convexity are relative to the P&L (documented in ADR-033).
+TAYLOR_REL = 1e-4

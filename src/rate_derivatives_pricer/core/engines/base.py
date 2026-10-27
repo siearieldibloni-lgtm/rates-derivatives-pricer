@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from datetime import date
 from typing import ClassVar
 
 from rate_derivatives_pricer.core.engines.results import PricingResult
@@ -41,6 +42,32 @@ class PricingEngine(ABC):
         ``price(...).present_value`` up to rounding.
         """
         return self.price(instrument, env).present_value
+
+    def cashflows_paid(
+        self, instrument: Instrument, env: MarketEnvironment, start: date, end: date
+    ) -> float:
+        """Signed undiscounted amounts paid in ``(start, end]`` (carry/roll-down, ADR-034).
+
+        Raises:
+            UnsupportedInstrumentError: If the engine does not support carry/roll-down.
+        """
+        raise UnsupportedInstrumentError(
+            f"{type(self).__name__} does not support carry/roll-down",
+            {"instrument_type": instrument.instrument_type},
+        )
+
+    def accrued_interest(
+        self, instrument: Instrument, env: MarketEnvironment, start: date, end: date
+    ) -> float:
+        """Signed net interest accrued over ``[start, end)`` (carry/roll-down, ADR-034).
+
+        Raises:
+            UnsupportedInstrumentError: If the engine does not support carry/roll-down.
+        """
+        raise UnsupportedInstrumentError(
+            f"{type(self).__name__} does not support carry/roll-down",
+            {"instrument_type": instrument.instrument_type},
+        )
 
 
 def engine_for(instrument_type: str, method: str = DEFAULT_PRICING_METHOD) -> PricingEngine:

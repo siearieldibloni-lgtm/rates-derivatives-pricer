@@ -62,6 +62,10 @@ class UnsupportedRiskMeasureError(UnsupportedInstrumentError):
     """No risk measure is registered under the requested name."""
 
 
+class UnsupportedScenarioError(UnsupportedRiskMeasureError):
+    """No scenario is registered under the requested name, or a scenario is ill-defined."""
+
+
 class PricingError(RatesPricerError):
     """Pricing failed for a reason other than invalid inputs."""
 

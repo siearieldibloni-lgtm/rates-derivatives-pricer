@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import date
 from typing import ClassVar
 
 import rate_derivatives_pricer
@@ -122,6 +123,43 @@ class DiscountingSwapEngine(PricingEngine):
         """PV only: signed discounted value of each leg (no cashflow table, no logging)."""
         swap = self._check(instrument)
         return float(sum(leg.direction.sign * _unsigned_leg_value(leg, env) for leg in swap.legs))
+
+    def cashflows_paid(
+        self, instrument: Instrument, env: MarketEnvironment, start: date, end: date
+    ) -> float:
+        """Signed sum of the amounts paid in ``(start, end]`` (undiscounted, positive = received).
+
+        Amounts are evaluated on ``env``: for carry/roll-down, the horizon environment, in which
+        every fixing of these coupons is already realised (ADR-034).
+        """
+        swap = self._check(instrument)
+        total = 0.0
+        for leg in swap.legs:
+            coupons = [
+                cf
+                for cf in leg.cashflows
+                if isinstance(cf, Coupon) and start < cf.payment_date <= end
+            ]
+            total += leg.direction.sign * sum(_coupon_amounts(coupons, env))
+        return total
+
+    def accrued_interest(
+        self, instrument: Instrument, env: MarketEnvironment, start: date, end: date
+    ) -> float:
+        """Signed net interest accrued over ``[start, end)`` by every coupon (undiscounted).
+
+        Each coupon contributes the interest of the part of its accrual period inside the window
+        (:meth:`Coupon.accrued_amount`), with the leg sign: the carry of carry/roll-down.
+        """
+        swap = self._check(instrument)
+        return float(
+            sum(
+                leg.direction.sign * cf.accrued_amount(env, start, end)
+                for leg in swap.legs
+                for cf in leg.cashflows
+                if isinstance(cf, Coupon)
+            )
+        )
 
     def price(self, instrument: Instrument, env: MarketEnvironment) -> PricingResult:
         """Full pricing: PV per leg, cashflow table, par rate, annuity and PVBP."""
