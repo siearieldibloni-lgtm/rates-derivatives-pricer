@@ -30,6 +30,8 @@ from rate_derivatives_pricer.api.schemas import (
     MarketModel,
     PriceRequest,
     PriceResult,
+    RiskRequest,
+    RiskResult,
     SnapshotListResult,
     SnapshotResult,
     TradeModel,
@@ -43,6 +45,7 @@ from rate_derivatives_pricer.services.requests import (
     CalculationOptions,
     InlineMarket,
     MarketInput,
+    RiskOptions,
     SnapshotReference,
     TradeInput,
 )
@@ -86,7 +89,7 @@ def _diagnostics(
 
 def _market_input(market: MarketModel) -> MarketInput:
     if isinstance(market, InlineMarketModel):
-        data = market.inline.model_dump(mode="json")
+        data = market.inline.model_dump(mode="json", exclude_none=True)
         return InlineMarket(
             valuation_date=data["valuation_date"],
             quotes=tuple(data["quotes"]),
@@ -236,5 +239,31 @@ def price(body: PriceRequest, service: ServiceDependency) -> Envelope[PriceResul
     return Envelope[PriceResult](
         request_id=get_request_id(),
         result=PriceResult.model_validate(outcome.result),
+        diagnostics=_diagnostics(service, outcome.diagnostics),
+    )
+
+
+@router.post(
+    "/v1/risk",
+    response_model=Envelope[RiskResult],
+    responses=ERROR_RESPONSES,
+    tags=["calculations"],
+)
+def risk(body: RiskRequest, service: ServiceDependency) -> Envelope[RiskResult]:
+    """Risk of a trade by bump-and-reprice: DV01 (parallel, per bucket, per curve), convexity."""
+    trade = _trade_input(body.trade)
+    outcome = service.risk(
+        _market_input(body.market),
+        trade,
+        RiskOptions(
+            measures=tuple(body.measures),
+            bump_size_bp=body.bump.size_bp,
+            mode=body.bump.mode,
+        ),
+        _options(body.options),
+    )
+    return Envelope[RiskResult](
+        request_id=get_request_id(),
+        result=RiskResult.model_validate(outcome.result),
         diagnostics=_diagnostics(service, outcome.diagnostics),
     )

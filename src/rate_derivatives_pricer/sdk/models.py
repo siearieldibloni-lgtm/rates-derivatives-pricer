@@ -4,6 +4,7 @@ SDK users (and the dashboard) import models from here, never from ``api`` direct
 """
 
 from rate_derivatives_pricer.api.schemas import (
+    BumpOptionsModel,
     CalculationOptionsModel,
     CashflowResult,
     CatalogResult,
@@ -20,13 +21,18 @@ from rate_derivatives_pricer.api.schemas import (
     OisSwapParams,
     PriceResult,
     QuoteModel,
+    RiskBucketResult,
+    RiskMeasureResult,
+    RiskResult,
     SnapshotInfo,
     SnapshotResult,
     TradeModel,
+    VanillaIrsParams,
     VersionResult,
 )
 
 __all__ = [
+    "BumpOptionsModel",
     "CalculationOptionsModel",
     "CashflowResult",
     "CatalogResult",
@@ -43,8 +49,12 @@ __all__ = [
     "OisSwapParams",
     "PriceResult",
     "QuoteModel",
+    "RiskBucketResult",
+    "RiskMeasureResult",
+    "RiskResult",
     "SnapshotInfo",
     "SnapshotResult",
     "TradeModel",
+    "VanillaIrsParams",
     "VersionResult",
 ]

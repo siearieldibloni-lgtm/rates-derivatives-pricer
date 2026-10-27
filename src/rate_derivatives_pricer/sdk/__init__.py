@@ -11,8 +11,10 @@ from rate_derivatives_pricer.sdk.client import (
     PricerApiError,
     PricerClient,
     UnsupportedInstrumentError,
+    UnsupportedRiskMeasureError,
     ValidationFailedError,
     ois_swap,
+    vanilla_irs,
 )
 
 __all__ = [
@@ -26,6 +28,8 @@ __all__ = [
     "PricerApiError",
     "PricerClient",
     "UnsupportedInstrumentError",
+    "UnsupportedRiskMeasureError",
     "ValidationFailedError",
     "ois_swap",
+    "vanilla_irs",
 ]
