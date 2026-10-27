@@ -1,0 +1,767 @@
+% =============================================================================
+% Swaps de taux vanilles (IRS) EUR contre Euribor : theorie, pratique, implementation
+% Compiler avec :  pdflatex pricing_irs.tex  (deux passes)
+% Les chiffres, tableaux et donnees des figures sont generes par
+% generate_irs_data.py a partir du code du depot (voir l'annexe).
+% =============================================================================
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[french]{babel}
+\usepackage{textcomp}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{microtype}
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{booktabs,array,tabularx,longtable}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,fit,calc,babel}
+\usepackage{pgfplots}
+\usepgfplotslibrary{groupplots}
+\pgfplotsset{compat=newest}
+\pgfkeys{/pgf/number format/.cd, use comma}
+\usepackage{fancyhdr}
+\usepackage[font=small,labelfont=bf]{caption}
+\usepackage[colorlinks=true,linkcolor=NavyBlue,urlcolor=NavyBlue,citecolor=NavyBlue]{hyperref}
+
+% --- Mise en page ------------------------------------------------------------
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.55em}
+\setlength{\emergencystretch}{3em}
+\setlist{itemsep=0.15em,topsep=0.3em}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small IRS EUR}
+\fancyhead[R]{\small\leftmark}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0.3pt}
+
+% --- Macros ------------------------------------------------------------------
+\newcommand{\estr}{\texorpdfstring{\texteuro STR}{EUR STR}}
+\newcommand{\code}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\pct}[1]{#1\,\%}
+\newcommand{\eur}{\ifmmode\,\text{\texteuro}\else\,\texteuro\fi}
+\newcommand{\bp}{\,\mathrm{bp}}
+\DeclareMathOperator{\PV}{PV}
+
+\theoremstyle{plain}
+\newtheorem{proposition}{Proposition}
+\theoremstyle{definition}
+\newtheorem{definition}{Définition}
+\theoremstyle{remark}
+\newtheorem*{remarque}{Remarque}
+
+% --- Listings ----------------------------------------------------------------
+\definecolor{codebg}{gray}{0.96}
+\definecolor{codekw}{rgb}{0.10,0.25,0.55}
+\definecolor{codecm}{rgb}{0.30,0.45,0.30}
+\lstset{
+  language=Python,
+  basicstyle=\fontsize{7.6}{9.2}\selectfont\ttfamily,
+  keywordstyle=\color{codekw}\bfseries,
+  commentstyle=\color{codecm}\itshape,
+  stringstyle=\color{BrickRed},
+  backgroundcolor=\color{codebg},
+  frame=single,
+  rulecolor=\color{black!25},
+  breaklines=true,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  aboveskip=0.6em,
+  belowskip=0.4em,
+  captionpos=b,
+}
+\renewcommand{\lstlistingname}{Listing}
+\lstdefinelanguage{json}{morestring=[b]", sensitive=false}
+
+\pgfplotsset{
+  every axis/.append style={
+    grid=major, grid style={black!12}, tick label style={font=\footnotesize},
+    label style={font=\footnotesize}, legend style={font=\footnotesize, draw=black!30},
+  },
+}
+\tikzset{
+  proc/.style={draw, rounded corners=3pt, minimum width=3.1cm, minimum height=0.95cm,
+    align=center, fill=blue!6, font=\small},
+  data/.style={draw, rounded corners=3pt, minimum height=0.8cm, align=center,
+    fill=orange!12, font=\small},
+  flow/.style={-{Stealth[length=2.4mm]}, thick},
+}
+
+% --- Chiffres generes par generate_irs_data.py -------------------------------
+\input{generated/irs_numbers.tex}
+
+\title{\textbf{Les swaps de taux vanilles (IRS) en euro}\\[0.4em]
+  \large Théorie, pratique de marché et implémentation dans le pricer de dérivés de taux}
+\author{Projet \texttt{rate-derivatives-pricer} -- phase 2}
+\date{\today}
+
+\begin{document}
+\maketitle
+\thispagestyle{empty}
+
+\begin{abstract}
+\noindent
+Ce document présente le swap de taux d'intérêt vanille (IRS) contre Euribor : sa définition, sa
+valorisation dans le cadre \emph{multi-courbes} utilisé depuis la crise de 2008 (actualisation sur
+la courbe \estr{}, projection sur la courbe de l'indice), les conventions de marché de l'euro, la
+construction des courbes par \emph{bootstrap} et les mesures de risque par choc des cotations
+(DV01 parallèle, par instrument de calibration, par courbe, convexité). Pour chaque notion, il montre
+comment elle est implémentée dans le pricer : fichier, classe, extrait de code et test. Un exemple
+chiffré complet (swap payeur à 5 ans) et la validation contre QuantLib terminent le document. Chaque
+nombre issu du pricer est produit par le code du dépôt.
+
+\medskip\noindent
+\textbf{Avertissement.} Les données de marché (snapshot \code{EUR_2026-10-19}) sont
+\emph{synthétiques} : aucun niveau de taux ou de base de ce document ne doit être lu comme une
+cotation réelle.
+\end{abstract}
+
+\newpage
+{\setlength{\parskip}{0pt}\tableofcontents}
+\newpage
+
+% =============================================================================
+\part{Théorie et pratique de marché}
+% =============================================================================
+
+\section{Le swap de taux vanille}\label{sec:swap}
+
+\subsection{Définition}
+Un swap de taux vanille échange, entre deux dates \(T_0 < T_n\), les intérêts d'un taux \emph{fixe}
+\(K\) contre ceux d'un taux \emph{variable} indexé sur un taux interbancaire à terme, ici
+l'Euribor 6 mois (ou 3 mois), pour un notionnel \(N\) qui n'est jamais échangé.
+\begin{itemize}
+  \item La \textbf{jambe fixe} verse à chaque date \(T_i^{\mathrm{fix}}\) le montant
+    \(N\,K\,\tau_i^{\mathrm{fix}}\), où \(\tau_i^{\mathrm{fix}}\) est la fraction d'année de la période.
+  \item La \textbf{jambe flottante} verse à chaque date \(T_j\) le montant \(N\,L_j\,\tau_j\), où
+    \(L_j\) est l'Euribor observé (\emph{fixé}) au début de la période \([S_j,T_j]\), avec
+    \(S_j = T_{j-1}\) : le taux est connu en début de période et payé en fin de période
+    (\emph{in advance}).
+\end{itemize}
+Le \textbf{payeur} (\code{pay_fixed}) paie le fixe et reçoit le flottant ; le \textbf{receveur}
+(\code{receive_fixed}) fait l'inverse. Le nom de la direction désigne toujours la jambe fixe.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[x=1cm,y=1cm]
+  \draw[-{Stealth}, thick] (0,0) -- (12.2,0) node[right] {\(t\)};
+  \foreach \x/\l in {0/{T_0},3/{T_1^{\mathrm{fix}}},6/{T_2^{\mathrm{fix}}},9/{T_3^{\mathrm{fix}}},12/{T_n}}
+    \draw (\x,0.1) -- (\x,-0.1) node[below] {\(\l\)};
+  \foreach \x in {3,6,9,12}
+    \draw[-{Stealth}, thick, blue!70!black] (\x,0) -- (\x,1.1);
+  \node[blue!70!black, font=\small] at (7.5,1.45) {jambe fixe : \(N K \tau^{\mathrm{fix}}\), annuelle, 30/360};
+  \foreach \x in {1.5,3,4.5,6,7.5,9,10.5,12}
+    \draw[-{Stealth}, thick, orange!85!black] (\x,0) -- (\x,-1.3);
+  \node[orange!85!black, font=\small] at (7.5,-1.85) {jambe flottante : \(N L_j \tau_j\), semestrielle, Act/360};
+\end{tikzpicture}
+\caption{Flux d'un swap payeur contre Euribor 6M (schéma). Le payeur reçoit la jambe flottante (en
+bas) et paie la jambe fixe (en haut) ; les flux de signes opposés se compensent aux dates communes.}
+\end{figure}
+
+\subsection{Pourquoi cet instrument}
+L'IRS est l'instrument de base du marché des taux : il transforme une dette à taux variable en dette à
+taux fixe (ou l'inverse), couvre un portefeuille obligataire, et ses taux de par par maturité
+(\emph{cotations de swaps}) sont l'information à partir de laquelle on construit les courbes de taux.
+
+\subsection{Rappels : facteurs d'actualisation et taux forward}
+Pour une courbe \(c\), \(P^c(t)\) est le facteur d'actualisation de la date de valorisation à \(t\)
+(\(P^c(0)=1\)). Le taux forward simple entre \(s\) et \(t\), avec la fraction d'année \(\tau(s,t)\) de
+l'indice, vaut
+\begin{equation}
+  F^c(s,t) \;=\; \frac{1}{\tau(s,t)}\left(\frac{P^c(s)}{P^c(t)} - 1\right).
+  \label{eq:forward}
+\end{equation}
+Le document \texttt{pricing\_ois.pdf} détaille ces notions, les décomptes de jours et le calendrier
+TARGET ; elles sont réutilisées telles quelles.
+
+\section{Valorisation : du mono-courbe au multi-courbes}\label{sec:pricing}
+
+\subsection{L'ancien cadre à courbe unique}
+Avant 2008, on supposait que l'Euribor se projetait sur la même courbe que celle qui actualise. En
+notant \(P\) cette courbe, le forward vaut \(F_j = F(S_j,T_j)\) et le flux flottant actualisé
+\(N\,\tau_j F_j P(T_j) = N\,(P(S_j)-P(T_j))\) : la somme \emph{télescope} en
+\begin{equation}
+  \PV_{\mathrm{flottant}} \;=\; N\,\bigl(P(T_0) - P(T_n)\bigr),
+  \label{eq:telescope}
+\end{equation}
+si bien que le taux de par du swap ne dépend plus que de la courbe unique.
+
+\subsection{Pourquoi le multi-courbes}
+La crise de 2008 a fait apparaître des écarts durables entre l'Euribor à différentes échéances et le
+taux sans risque : l'Euribor 6M embarque une prime de crédit et de liquidité interbancaire que l'\estr{}
+n'a pas, et l'Euribor 6M est supérieur à l'Euribor 3M. Deux conséquences :
+\begin{enumerate}
+  \item \textbf{Actualisation.} Les swaps compensés ou collatéralisés sont rémunérés au taux de leur
+    collatéral, \estr{} en euro : tous les flux s'actualisent sur la \emph{courbe OIS} \(P^{d}\).
+  \item \textbf{Projection.} Chaque indice a sa \emph{propre} courbe de projection \(P^{e}\) (une pour
+    l'Euribor 6M, une pour l'Euribor 3M), calibrée sur les swaps cotés contre cet indice.
+\end{enumerate}
+La relation \eqref{eq:telescope} n'est alors plus vraie : projeter et actualiser sur des courbes
+différentes rend le taux de par dépendant des deux courbes.
+
+\subsection{Valeur actuelle}
+Pour un payeur, avec \(F^e_j = F^e(S_j,T_j)\) calculé par \eqref{eq:forward} sur la courbe de
+projection \(e\) de l'indice :
+\begin{align}
+  \PV_{\mathrm{flottant}} &= \sum_{j} N\,\tau_j\,F^e_j\,P^d(T_j), \label{eq:floatpv}\\
+  \PV_{\mathrm{fixe}}     &= \sum_{i} N\,K\,\tau^{\mathrm{fix}}_i\,P^d(T^{\mathrm{fix}}_i) \;=\; K\,A,
+  \label{eq:fixedpv}\\
+  \PV_{\mathrm{payeur}}   &= \PV_{\mathrm{flottant}} - \PV_{\mathrm{fixe}}, \qquad
+  \PV_{\mathrm{receveur}} = -\PV_{\mathrm{payeur}}. \label{eq:pv}
+\end{align}
+Les sommes ne portent que sur les coupons \emph{non encore payés} (date de paiement strictement
+postérieure à la date de valorisation). Le facteur \(A\) est l'\textbf{annuité}.
+
+\subsection{Taux de par, annuité et PVBP}
+\begin{definition}
+L'\emph{annuité} est \(A=\sum_i N\,\tau_i^{\mathrm{fix}}\,P^d(T_i^{\mathrm{fix}})\) ; le \emph{taux de par}
+est le taux fixe qui annule la valeur actuelle,
+\begin{equation}
+  S \;=\; \frac{\PV_{\mathrm{flottant}}}{A},
+  \qquad\text{et}\qquad
+  \PV_{\mathrm{payeur}} \;=\; A\,(S-K).
+  \label{eq:par}
+\end{equation}
+Le \emph{PVBP} est la variation de valeur d'un point de base du taux fixe, \(A\times10^{-4}\).
+\end{definition}
+Le taux de par \(S\) est la cotation de marché d'un swap de la même maturité (\S\ref{sec:bootstrap}).
+Un swap dont le taux fixe est le par rate a une valeur actuelle nulle, c'est aussi la propriété testée
+par le pricer.
+
+\subsection{Le coupon indexé sur Euribor}\label{sec:iborcoupon}
+Le taux du coupon qui commence en \(S_j\) est \emph{fixé} à la \textbf{date de fixing}
+\(f_j\), deux jours ouvrés TARGET avant \(S_j\). Selon la position de \(f_j\) par rapport à la date de
+valorisation \(t_0\) :
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Cas & Taux \(L_j\) du coupon & Si le fixing manque \\
+\midrule
+\(f_j < t_0\) (fixing passé) & fixing publié & erreur (\code{MarketDataError}) \\
+\(f_j = t_0\) (fixing du jour) & fixing publié s'il est fourni & projeté \\
+\(f_j > t_0\) & forward \(F^e(S_j,T_j)\) de la courbe de projection & --- \\
+\bottomrule
+\end{tabular}
+\end{center}
+Le forward projeté est lu \emph{sur la période d'accrual elle-même} : c'est la convention dite
+\emph{par coupon} de QuantLib. Un fixing connu ne dépend plus du marché : c'est ce qui rend le premier
+coupon d'un swap neuf insensible aux chocs de taux (\S\ref{sec:risk}).
+
+\section{Conventions de marché de l'euro}\label{sec:conv}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}lX@{}}
+\toprule
+Élément & Convention retenue (ADR-027, fichier \code{EUR.json}) \\
+\midrule
+Calendrier & TARGET \\
+Date spot & date de valorisation (ajustée \emph{following}) + 2 jours ouvrés \\
+Jambe fixe & annuelle, \textbf{30/360 Bond Basis} (ISDA 4.16(f)) \\
+Jambe flottante & fréquence de l'indice (6M ou 3M), Act/360 \\
+Indice & Euribor 6M (défaut) ou 3M ; fixing 2 jours ouvrés TARGET avant le début, Act/360 \\
+Ajustement des dates & Modified Following, y compris l'échéance \\
+Génération & \emph{backward} depuis l'échéance, stub éventuel en tête ; règle de fin de mois désactivée \\
+Décalage de paiement & aucun (paiement à la date de fin de période) \\
+Échéance & départ + tenor, puis ajustée par l'échéancier \\
+Dépôt Euribor (calibration) & départ spot, échéance = tenor de l'indice, Act/360, Modified Following, fin de mois \\
+\bottomrule
+\end{tabularx}
+\end{center}
+Ces conventions sont celles de \code{EuriborSwapIsdaFixA} de QuantLib. Elles ne se devinent pas : elles
+ont été validées avant d'être écrites (règle 7 du projet), puis vérifiées date par date contre QuantLib.
+
+\section{Construction des courbes par bootstrap multi-courbes}\label{sec:bootstrap}
+
+\subsection{Instruments de calibration}
+\begin{itemize}
+  \item \textbf{Courbe \estr{} (actualisation)} : un dépôt overnight puis des OIS de 1 semaine à
+    30 ans (phase~1).
+  \item \textbf{Courbe de chaque indice} : un \emph{dépôt Euribor} (spot, durée du tenor de l'indice),
+    puis des IRS annuels de 1 à 30 ans contre cet indice. Pas de FRA ni de \emph{basis swap} dans cette
+    phase.
+\end{itemize}
+Chaque instrument a une \emph{cotation implicite} que l'on sait calculer à partir de courbes
+candidates, et un \emph{pilier} : la dernière date dont sa valeur dépend (la dernière date de paiement).
+
+\subsection{Algorithme en deux étapes}
+\begin{enumerate}
+  \item Calibrer la courbe \(P^d\) (\estr{}) sur ses dépôts et OIS, comme en phase 1.
+  \item Pour chaque indice \(e\) : trier ses instruments par pilier ; pour chaque pilier \(n\),
+    trouver le facteur \(P^e_n\) tel que la cotation implicite égale la cotation de marché, les nœuds
+    \(P^e_1,\dots,P^e_{n-1}\) étant déjà connus et \(P^d\) \emph{fixée}.
+\end{enumerate}
+Pour un IRS de pilier \(T_n\), l'équation est
+\begin{equation}
+  \frac{1}{A}\sum_{j} N\,\tau_j\,F^e_j(P^e_n)\,P^d(T_j) \;=\; S^{\mathrm{marché}}_n,
+  \label{eq:calib-swap}
+\end{equation}
+et pour le dépôt, \(F^e(\mathrm{spot},T)=q^{\mathrm{marché}}\). Avec une interpolation locale
+(\emph{log-linéaire sur les facteurs d'actualisation}), l'instrument \(n\) ne dépend que des nœuds
+jusqu'à \(n\) : une passe séquentielle est exacte, et la recherche de racine est unidimensionnelle
+(Brent).
+
+\subsection{Calibrer sans les fixings}\label{sec:nofixing}
+Un IRS spot a pour premier fixing celui de la date de valorisation. Si cette valeur publiée était
+visible pendant la calibration, le premier coupon serait \emph{figé} au lieu d'être projeté et la
+courbe dépendrait d'un fixing, ce qu'une cotation de marché ne dit pas. Les instruments de calibration
+sont donc valorisés \emph{sans fixings} ; le swap que l'on valorise ensuite, lui, les utilise.
+
+\section{Risque par choc des cotations}\label{sec:risk}
+
+\subsection{Principe : bump-and-reprice sur les instruments de calibration}
+On choque de \(h\) points de base le taux coté d'instruments de calibration, on \emph{re-calibre}
+toutes les courbes, on revalorise. Le résultat est la sensibilité aux \emph{par rates}, celle que
+regardent les desks, par opposition à un choc direct des taux zéro. Soit \(\PV(\mathbf q)\) la valeur
+en fonction du vecteur des cotations.
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}lX@{}}
+\toprule
+Mesure & Définition (ADR-029) \\
+\midrule
+DV01 parallèle & \(\bigl[\PV(\mathbf q+h\mathbf 1) - \PV(\mathbf q-h\mathbf 1)\bigr]/2h\), par bp \\
+DV01 par instrument (\emph{key rate}) & même formule en ne choquant qu'une cotation \(q_k\) à la fois \\
+DV01 par courbe & on choque les cotations d'une courbe : OIS (actualisation, avec re-calibration des
+courbes Ibor) ou un indice Ibor (projection) \\
+Convexité & \(\bigl[\PV(+h) - 2\PV + \PV(-h)\bigr]/h^2\), en bp\(^2\), choc parallèle \\
+\bottomrule
+\end{tabularx}
+\end{center}
+Le signe est celui du PV : le DV01 est la variation de valeur pour \(+1\bp\) ; un payeur de fixe gagne
+quand les taux montent (DV01 \(>0\)).
+
+\subsection{Propriétés utiles}
+\begin{itemize}
+  \item \textbf{Différence centrée.} Elle annule les termes d'ordre deux : l'erreur est d'ordre
+    \(h^2\). Une différence avant ou arrière (\code{up}, \code{down}) y ajoute \(\pm\tfrac12 h\,\PV''\).
+  \item \textbf{Cohérence.} La somme des DV01 par instrument, comme celle des DV01 par courbe, vaut le
+    DV01 parallèle (dérivée d'une somme de chocs), à l'erreur de la différence près.
+  \item \textbf{Développement de Taylor.} Pour un choc parallèle \(x\) en points de base,
+    \(\PV(x)\approx \PV + \mathrm{DV01}\,x + \tfrac12\,\mathrm{convexité}\,x^2\).
+  \item \textbf{Fixings connus.} Un fixing publié ne bouge pas avec le marché : le premier coupon d'un
+    swap neuf ne contribue pas au DV01.
+\end{itemize}
+
+% =============================================================================
+\part{Implémentation dans le pricer}
+% =============================================================================
+
+\section{Carte du code}\label{sec:map}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{4.2cm}X@{}}
+\toprule
+Notion & Où elle vit (\code{src/rate_derivatives_pricer/}) \\
+\midrule
+Conventions EUR (config.) & \code{core/conventions/data/EUR.json}, \code{conventions/currency.py} \\
+Indice Euribor & \code{core/market/indices.py} : \code{IborIndex} \\
+Cotations Ibor & \code{core/market/quotes.py} : \code{IborDepositQuote}, \code{IborSwapQuote} \\
+Snapshot, fixings & \code{core/market/snapshot.py}, \code{providers.py} \\
+Échéancier & \code{core/schedule/generator.py} (réutilisé de la phase 1) \\
+Coupon Euribor & \code{core/instruments/cashflows.py} : \code{IborCoupon} \\
+Swap vanille & \code{core/instruments/swaps.py} : \code{VanillaIrs} ; fabrique \code{factories.py} \\
+Moteur de valorisation & \code{core/engines/discounting.py} : \code{DiscountingSwapEngine} \\
+Instruments de calibration & \code{core/market/calibration.py} \\
+Bootstrap multi-courbes & \code{core/market/bootstrap.py} : \code{CurveBuilder} \\
+Risque & \code{core/risk/} : \code{bumps.py}, \code{measures.py}, \code{engine.py} \\
+Service, API, SDK, UI & \code{services/}, \code{api/}, \code{sdk/}, \code{ui/} \\
+\bottomrule
+\end{tabularx}
+\end{center}
+La règle de dépendance reste \(\texttt{ui}\to\texttt{sdk}\to\texttt{api}\to\texttt{services}\to
+\texttt{core}\), vérifiée par \code{import-linter} ; le cœur n'importe ni FastAPI ni QuantLib.
+
+\section{Conventions, indices et données de marché}
+
+\subsection{Les conventions sont de la configuration}
+Aucune convention n'est codée en dur : la section \code{ibor} de \code{EUR.json} décrit les deux
+indices, le dépôt et le swap. Ajouter l'USD ou changer une convention revient à modifier un fichier.
+\begin{lstlisting}[language=json,caption={Extrait de \code{EUR.json} : la section \code{ibor}.}]
+"ibor": {
+  "default_index": "EURIBOR6M",
+  "indices": [{"name": "EURIBOR6M", "tenor": "6M", "fixing_days": 2, "calendar": "TARGET",
+               "day_count": "ACT/360", "business_day_convention": "MODIFIED_FOLLOWING",
+               "end_of_month": true}, ... ],
+  "deposit": {"settlement_days": 2, "business_day_convention": "MODIFIED_FOLLOWING",
+              "end_of_month": true, "day_count": "ACT/360"},
+  "swap": {"fixed_frequency": "ANNUAL", "fixed_day_count": "30/360",
+           "business_day_convention": "MODIFIED_FOLLOWING", "end_of_month": false,
+           "rule": "BACKWARD", "payment_lag_days": 0}
+}
+\end{lstlisting}
+\code{CurrencyConventions} charge cette section dans des objets figés (\code{IborIndex},
+\code{IborSwapConventions}) ; une devise sans section \code{ibor} reste valide et refuse simplement les
+IRS (\code{ConventionError}).
+
+\subsection{\code{IborIndex} et date de fixing}
+\code{IborIndex} est un objet valeur (dataclass figée) : nom, tenor, jours de fixing, calendrier,
+décompte. Sa méthode \code{fixing_date(accrual_start)} recule de \code{fixing_days} jours ouvrés du
+calendrier de fixing.
+
+\subsection{Cotations Ibor}
+Une cotation Ibor nomme l'indice dont elle calibre la courbe ; il fait partie de son identité, de sorte
+que « 5Y » existe une fois par courbe. Le champ \code{index} est obligatoire pour les types
+\code{ibor_deposit} et \code{ibor_swap}, interdit pour les autres.
+\begin{lstlisting}[caption={\code{IborQuote} : l'indice fait partie de la clé d'identité.}]
+@dataclass(frozen=True, slots=True)
+class IborQuote(Quote):
+    index_name: str = field(kw_only=True)
+
+    @property
+    def key(self) -> tuple[str, str]:
+        return (self.instrument_type, f"{self.index_name}/{self.tenor_label.upper()}")
+\end{lstlisting}
+Chaque cotation porte une \emph{unité explicite} (\code{percent}, \code{decimal}, \code{bp}), source
+classique de bugs en production ; \code{with_rate()} renvoie une copie dans la même unité, ce qui sert
+aux chocs.
+
+\section{Instruments : coupon, swap, échéancier}
+
+\subsection{\code{IborCoupon}}
+Le coupon décide lui-même de son taux selon la position de son fixing (tableau de la
+\S\ref{sec:iborcoupon}).
+\begin{lstlisting}[caption={\code{IborCoupon.rate} : fixing publié ou forward de la courbe de l'indice.}]
+def rate(self, env: MarketEnvironment) -> float:
+    fixing = env.fixing(self.index.name, self.fixing_date)
+    if self.fixing_date < env.valuation_date:
+        if fixing is None:
+            raise MarketDataError(f"missing {self.index.name} fixing", {...})
+        return fixing
+    if self.fixing_date == env.valuation_date and fixing is not None:
+        return fixing
+    return env.projection_curve(self.index.name).forward_rate(
+        self.accrual_start, self.accrual_end, self.index.day_count)
+\end{lstlisting}
+L'environnement de marché (\code{MarketEnvironment}) fournit la courbe de projection \emph{de l'indice},
+distincte de la courbe d'actualisation : c'est là que le multi-courbes se joue dans le code.
+
+\subsection{\code{VanillaIrs} et fabrique}
+\code{VanillaIrs} (dataclass figée) ne contient que des données : la jambe fixe, la jambe flottante,
+l'indice, les dates. Elle ne porte pas son moteur de valorisation. La fabrique
+\code{build_vanilla_irs} construit les deux échéanciers avec le même générateur que la phase~1 (fixe :
+tenor 1Y ; flottant : tenor de l'indice), puis les coupons.
+\begin{lstlisting}[caption={Construction de la jambe flottante (extrait de \code{build_vanilla_irs}).}]
+floating_leg = Leg(
+    name="floating",
+    cashflows=tuple(
+        IborCoupon(notional=notional, accrual_start=p.accrual_start, accrual_end=p.accrual_end,
+                   payment_date=p.payment_date, day_count=index.day_count, index=index,
+                   fixing_date=index.fixing_date(p.accrual_start))
+        for p in floating_schedule.periods),
+    notional=notional, direction=direction.floating_leg_direction)
+\end{lstlisting}
+Les dates (début, fin, paiement, fixing) des deux jambes sont identiques à celles de QuantLib
+(\S\ref{sec:valid}). La fabrique \code{vanilla_irs_factory} lit une description de trade (JSON) :
+devise, indice (par défaut celui de la devise), notionnel, taux fixe, direction, et exactement une de
+\code{maturity} ou \code{end_date}, plus une \code{start_date} optionnelle (swap en cours ou forward).
+
+\section{Le moteur de valorisation}
+
+Un seul \code{DiscountingSwapEngine} valorise l'OIS et l'IRS : il somme, jambe par jambe, les flux non
+encore payés actualisés sur la courbe d'actualisation, applique le signe de la jambe, et calcule aussi
+taux de par, annuité et PVBP (équations \eqref{eq:floatpv}--\eqref{eq:par}). Les moteurs sont sans état
+et choisis par un registre ; l'instrument ne connaît pas son moteur.
+
+\subsection{Projection en lot}
+Le calcul des taux forward coupon par coupon dominait le temps de calcul d'un bootstrap. Les coupons
+exposent donc un point d'extension, \code{Cashflow.amounts(cashflows, env)}, dont la valeur par défaut
+boucle sur \code{amount()} ; \code{IborCoupon} le surcharge et lit les facteurs d'actualisation de tous
+ses coupons projetés en \emph{un seul appel} à la courbe.
+\begin{lstlisting}[caption={Le moteur évalue une jambe par lots, un lot par type de coupon.}]
+def _coupon_amounts(coupons, env):
+    amounts = [0.0] * len(coupons)
+    positions_by_type = {}
+    for position, coupon in enumerate(coupons):
+        positions_by_type.setdefault(type(coupon), []).append(position)
+    for coupon_type, positions in positions_by_type.items():
+        batch = coupon_type.amounts([coupons[p] for p in positions], env)
+        for position, amount in zip(positions, batch, strict=True):
+            amounts[position] = amount
+    return amounts
+\end{lstlisting}
+Le résultat est identique, à l'arrondi près, au calcul coupon par coupon (test unitaire). Le moteur
+expose aussi \code{present_value()}, un chemin léger (sans tableau de flux ni journalisation) utilisé
+par le risque, qui revalorise des centaines de fois.
+
+\section{Calibration et bootstrap}
+
+\subsection{Instruments de calibration}
+\code{CalibrationInstrument} est le pendant du \code{RateHelper} de QuantLib : pour une cotation et un
+environnement candidat, il calcule la cotation implicite. Le bootstrap reste générique.
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Classe & Cotation implicite & Pilier \\
+\midrule
+\code{IborDepositCalibration} & forward simple de la courbe de l'indice, spot \(\to\) tenor & échéance \\
+\code{IborSwapCalibration} & taux de par du swap (moteur) & dernier paiement \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{\code{CurveBuilder} en deux étapes}
+\code{CurveBuilder.build(snapshot)} calibre d'abord la courbe \estr{}, puis une courbe par indice, avec
+un environnement de calibration dont la courbe d'actualisation est la courbe \estr{} figée et les
+fixings sont \emph{absents} (\S\ref{sec:nofixing}). L'environnement renvoyé contient la courbe
+d'actualisation, toutes les courbes de projection, les fixings et un rapport de calibration par
+courbe (pilier, cotation, itérations, résidu).
+
+\subsection{Rendre le risque abordable}
+Un \emph{key rate} sur 56 cotations demande environ 110 re-bootstraps. Le premier jet prenait 0{,}8~s par
+construction, soit 43~s pour un IRS à 5 ans. Après profilage, quatre optimisations \emph{exactes}
+(résultats identiques au bit près, testés) ont ramené ce temps à environ 2{,}5~s (6~s pour 30 ans) :
+\begin{enumerate}
+  \item \textbf{Mémoïsation des piliers résolus.} La clé contient tout ce dont la solution dépend :
+    l'instrument, sa cotation, les nœuds déjà résolus de la courbe et, pour un IRS, les nœuds de la
+    courbe d'actualisation jusqu'au pilier (plus le nœud qui l'encadre). Un choc ne re-résout que les
+    piliers qu'il peut déplacer. Valable pour une interpolation \emph{locale} (attribut
+    \code{Interpolator.local}).
+  \item \textbf{Mémoïsation des instruments de calibration} : leurs échéanciers ne dépendent pas du
+    taux coté.
+  \item \textbf{Horizon.} \code{build(snapshot, horizon=d)} s'arrête, pour chaque courbe, au premier
+    pilier au moins égal à \(d\) ; le pricer de risque passe la dernière date de flux du trade. Une
+    cotation au-delà de l'horizon n'a aucun effet : son bucket est \emph{exactement} nul.
+  \item \textbf{Projection en lot} et année-fractions précalculées.
+\end{enumerate}
+\begin{lstlisting}[caption={Clé de mémoïsation d'un pilier (extrait de \code{_calibrate_pillar}).}]
+memo_key = (
+    template.name, template.curve_reference_date, instrument.quote.key, pillar, market_quote,
+    tuple(pillar_dates), tuple(discount_factors),
+    self._discount_signature(discount_curve, pillar),
+)
+\end{lstlisting}
+
+\section{Le module de risque}
+
+Le risque dépend d'une \emph{fonction} \code{pricer(instrument, snapshot) -> PV}, jamais d'un moteur :
+remplacer le produit ou le moteur ne change rien dans \code{risk/}. C'est l'appelant (le service) qui
+construit ce pricer : re-bootstrap du snapshot choqué, puis moteur.
+\begin{itemize}
+  \item \code{BumpTarget} sélectionne les cotations (par courbe, par type, par identité) ;
+    \code{BumpSpec} ajoute la taille et le schéma (\code{up}, \code{down}, \code{central}).
+  \item \code{Bumper.apply(snapshot, target, shift_bp)} renvoie un \emph{nouveau} snapshot (rien n'est
+    modifié) ; une cible qui ne sélectionne aucune cotation est une erreur.
+  \item Les mesures (\code{ParallelDV01}, \code{KeyRateDV01}, \code{CurveSpecificDV01},
+    \code{Convexity}) sont enregistrées dans un registre ; ajouter une mesure est ajouter un fichier.
+    Un test l'enregistre depuis \code{tests/} sans toucher à \code{risk/}.
+  \item \code{RiskEngine} mémorise les valorisations par signature de snapshot : le choc parallèle sert
+    à la fois le DV01 parallèle et la convexité.
+\end{itemize}
+\begin{lstlisting}[caption={Première dérivée par bp selon le schéma de différence finie.}]
+def dv01(self, spec: BumpSpec) -> float:
+    pvs = self.pvs(spec)          # {shift_bp: PV} apres re-bootstrap
+    h = spec.size_bp
+    match spec.mode:
+        case BumpMode.UP:      return (pvs[h] - self.base_pv()) / h
+        case BumpMode.DOWN:    return (self.base_pv() - pvs[-h]) / h
+        case BumpMode.CENTRAL: return (pvs[h] - pvs[-h]) / (2.0 * h)
+\end{lstlisting}
+
+\section{Service, API, SDK et tableau de bord}
+
+\code{PricerService.risk} valide les noms de mesures avant tout calcul, construit le trade, crée un
+\code{CurveBuilder} \emph{par requête} (sa mémoire n'est pas partagée) et appelle le moteur de risque.
+Les courbes choquées ne passent pas par le cache de courbes. L'API expose \code{POST /v1/risk} ; une
+mesure inconnue donne \code{400 UNSUPPORTED_RISK_MEASURE}.
+\begin{lstlisting}[language=json,caption={Requête \code{POST /v1/risk} pour un IRS payeur à 5 ans.}]
+{ "market":   { "snapshot": "EUR_2026-10-19" },
+  "trade":    { "type": "vanilla_irs",
+                "params": { "notional": 10000000, "fixed_rate": 0.025,
+                            "direction": "pay_fixed", "maturity": "5Y",
+                            "index": "EURIBOR6M" } },
+  "measures": ["parallel_dv01", "key_rate_dv01", "curve_dv01", "convexity"],
+  "bump":     { "size_bp": 1.0, "mode": "central" } }
+\end{lstlisting}
+Le SDK expose \code{vanilla_irs(...)} et \code{PricerClient.risk(...)} ; le tableau de bord Streamlit
+(onglets Marché, Trade, Risque) n'appelle que le SDK. La réponse contient, par mesure, la valeur, l'unité
+et les \emph{buckets} (courbe, instrument, valeur).
+
+% =============================================================================
+\part{Exemple chiffré et validation}
+% =============================================================================
+
+\section{Exemple : un swap payeur à 5 ans contre Euribor 6M}\label{sec:example}
+
+Swap payeur, notionnel \IrsNotional\eur, taux fixe \pct{\IrsFixedRate}, Euribor 6M, du \IrsStart{} au
+\IrsEnd{} (départ spot), valorisé au 2026-10-19 sur le snapshot synthétique.
+
+\subsection{Les courbes}
+Le bootstrap produit trois courbes : \estr{}, Euribor 3M et Euribor 6M. La
+figure~\ref{fig:curves} montre les taux zéro et la \emph{base} Euribor 6M $-$ OIS, mesurée sur le
+forward 6M : la courbe 6M est au-dessus de l'OIS aux maturités courtes et moyennes, et celle de 3M entre
+les deux. Attention à ne pas sur-interpréter la base à long terme : les spreads du snapshot synthétique
+décroissent avec la maturité, ce qui rend la base du forward négative au-delà d'une quinzaine d'années,
+un artefact des données et non un comportement de marché.
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[group style={group size=2 by 1, horizontal sep=1.8cm}, width=0.48\linewidth,
+                  height=6cm]
+\nextgroupplot[xlabel={Maturité (années)}, ylabel={Taux zéro (\%)}, legend pos=south east]
+\addplot[blue!70!black, thick] table[x=t, y=ois]{data/irs_curves.dat};
+\addplot[orange!85!black, thick] table[x=t, y=e6]{data/irs_curves.dat};
+\addplot[green!50!black, thick, dashed] table[x=t, y=e3]{data/irs_curves.dat};
+\legend{OIS, Euribor 6M, Euribor 3M}
+\nextgroupplot[xlabel={Date de début du forward 6M (années)}, ylabel={Forward 6M Euribor $-$ OIS (pb)}]
+\addplot[red!70!black, thick] table[x=t, y=basis]{data/irs_curves.dat};
+\end{groupplot}
+\end{tikzpicture}
+\caption{Courbes de taux zéro continus (Act/365F) et base entre le forward 6M de la courbe Euribor 6M
+et celui de la courbe OIS.}\label{fig:curves}
+\end{figure}
+
+\subsection{Calibration de la courbe Euribor 6M}
+\IrsPillarCount{} instruments (un dépôt, quinze IRS), au plus \IrsMaxIterations{} itérations de
+Brent par pilier, résidu maximal \IrsMaxResidual{} sur le taux.
+\begin{table}[H]
+\centering
+\small
+\input{generated/irs_pillars.tex}
+\caption{Nœuds calibrés de la courbe Euribor 6M.}
+\end{table}
+
+\subsection{Flux et valeur actuelle}
+Le swap a \IrsFixedCount{} coupons fixes et \IrsFloatingCount{} coupons flottants. Le \emph{premier}
+coupon flottant, fixé le \IrsFirstFixingDate{} (la date de valorisation), prend le fixing publié de
+\pct{\IrsFirstFixing} au lieu d'un forward projeté ; les autres sont projetés sur la courbe Euribor 6M
+et tous sont actualisés sur la courbe OIS.
+\begin{table}[H]
+\centering
+\scriptsize
+\resizebox{\linewidth}{!}{\input{generated/irs_cashflows.tex}}
+\caption{Flux du swap (montants signés : positif $=$ reçu, négatif $=$ payé).}
+\end{table}
+\begin{center}
+\begin{tabular}{@{}lr@{}}
+\toprule
+Grandeur & Valeur \\
+\midrule
+PV de la jambe fixe (payée) & \IrsFixedLegPV\eur \\
+PV de la jambe flottante (reçue) & \IrsFloatingLegPV\eur \\
+\textbf{PV du swap payeur} & \textbf{\IrsPV\eur} \\
+Annuité \(A\) & \IrsAnnuity\eur \\
+PVBP \(=A\times10^{-4}\) & \IrsPVBP\eur \\
+Taux de par \(S\) & \pct{\IrsParRate} \\
+Écart au par \(S-K\) & \IrsSpread{} pb \\
+\bottomrule
+\end{tabular}
+\end{center}
+On retrouve l'identité \eqref{eq:par} : \(\PV=A\,(S-K)\). L'annuité multipliée par l'écart au par
+de \IrsSpread{} pb (soit \IrsSpread{} fois \(10^{-4}\) en valeur décimale) redonne la valeur actuelle
+du tableau.
+
+\subsection{Ce que change le multi-courbes}
+Si l'on projetait par erreur l'Euribor 6M sur la courbe OIS (cadre mono-courbe), le même swap vaudrait
+\IrsSingleCurvePV\eur, soit un écart de \IrsSingleCurveGap\eur{} : sur ce marché synthétique, la
+prime de l'Euribor 6M sur l'OIS pèse bien plus que le PVBP. C'est l'ordre de grandeur de l'erreur que
+le cadre multi-courbes supprime.
+
+\subsection{Risque}
+\begin{center}
+\begin{tabular}{@{}lr@{}}
+\toprule
+Mesure & Valeur \\
+\midrule
+DV01 parallèle & \IrsParallelDV\eur/pb \\
+DV01 courbe Euribor 6M (projection) & \IrsDVSix\eur/pb \\
+DV01 courbe OIS (actualisation) & \IrsDVOis\eur/pb \\
+DV01 courbe Euribor 3M & \IrsDVThree\eur/pb \\
+Somme des DV01 par instrument & \IrsKeyRateSum\eur/pb (écart au parallèle : \IrsKeyRateGap{}) \\
+Convexité & \IrsConvexity{} \eur/pb\(^2\) \\
+Nombre de revalorisations & \IrsRiskBumps{} \\
+\bottomrule
+\end{tabular}
+\end{center}
+Le risque se concentre sur la courbe de projection Euribor 6M : un swap payeur à 5 ans est surtout
+exposé à l'indice qu'il reçoit ; l'actualisation OIS pèse très peu et le swap n'a aucune exposition à
+l'Euribor 3M. La figure~\ref{fig:keyrate} détaille le DV01 par instrument : l'essentiel est sur le
+swap Euribor 6M à 5 ans (son DV01 vaut le PVBP, puisque la cotation 5Y est le taux de par), et
+l'exposition s'annule au-delà de l'horizon du swap (maturités longues), exactement et non par
+approximation. Le bucket du dépôt Euribor 6M est \emph{négatif} : relever ce dépôt, toutes les autres
+cotations restant fixes, abaisse \(P^e\) à six mois et donc le forward 6M--1Y, qui entre dans la jambe
+reçue. Ce bucket compense en partie le bucket 5Y, d'où un DV01 parallèle inférieur au PVBP.
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[ybar, bar width=4pt, width=\linewidth, height=6.2cm, xtick=data,
+  xticklabels from table={data/irs_keyrate.dat}{label},
+  x tick label style={rotate=60, anchor=east, font=\scriptsize},
+  ylabel={DV01 (\eur/pb)}, enlarge x limits=0.03, legend pos=north west]
+\addplot[fill=orange!70] table[x=i, y=e6]{data/irs_keyrate.dat};
+\addplot[fill=blue!60] table[x=i, y=ois]{data/irs_keyrate.dat};
+\legend{Euribor 6M, OIS}
+\end{axis}
+\end{tikzpicture}
+\caption{DV01 par instrument de calibration du swap de l'exemple.}\label{fig:keyrate}
+\end{figure}
+
+\paragraph{Contrôle de Taylor.} Un choc parallèle de \IrsTaylorShift{} pb donne, après re-calibration,
+une variation de PV de \IrsTaylorActual\eur, contre \IrsTaylorEstimate\eur{} prédits par
+\(\mathrm{DV01}\,x+\tfrac12\mathrm{convexité}\,x^2\) : le DV01 et la convexité sont cohérents.
+
+\section{Validation contre QuantLib}\label{sec:valid}
+
+QuantLib est l'oracle de test (jamais importé par le cœur). La comparaison se fait couche par couche,
+sur des grilles générées (9 marchés : 3 dates de valorisation, dont un mois-fin et une veille de
+Pâques, et 3 chocs parallèles de \(-250\), \(0\) et \(+150\) pb sur toutes les cotations, Euribor
+comprises). Les courbes QuantLib sont figées avant valorisation pour que les fixings chargés dans
+l'indice ne les re-calibrent pas (\S\ref{sec:nofixing}).
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}Xrr@{}}
+\toprule
+Comparaison & Écart maximal & Critère \\
+\midrule
+Facteurs d'actualisation, courbes Euribor 3M et 6M (log-linéaire) & \(3{,}5\times10^{-13}\) & \(10^{-10}\) \\
+Idem, interpolation linéaire sur les zéros & \(3{,}0\times10^{-12}\) & \(10^{-10}\) \\
+PV d'IRS par notionnel (972 swaps spot + 72 en cours / forward) & \(2{,}2\times10^{-13}\) & \(10^{-8}\) \\
+Taux de par, relatif & \(4{,}0\times10^{-10}\) & \(10^{-8}\) \\
+Annuité, relative & \(5{,}6\times10^{-14}\) & \(10^{-8}\) \\
+Échéanciers (accrual, paiement, fixing, 2 jambes, stubs 18M/30M) & égalité exacte & exacte \\
+DV01 par instrument, rapporté au DV01 parallèle (3 trades, 56 buckets) & \(9{,}8\times10^{-12}\) & \(10^{-6}\) \\
+DV01 parallèle, relatif & \(8{,}1\times10^{-13}\) & \(10^{-6}\) \\
+Somme des buckets contre DV01 parallèle, relatif & \(2{,}1\times10^{-7}\) & \(10^{-6}\) \\
+\bottomrule
+\end{tabularx}
+\end{center}
+Le DV01 par instrument est comparé au DV01 \emph{parallèle du trade} : un instrument loin de l'échéance a
+un DV01 proche de zéro, pour lequel un écart relatif à lui-même n'aurait pas de sens. Les comparaisons de
+risque utilisent le pricer de production (courbes tronquées, mémoïsation) face aux courbes complètes de
+QuantLib, ce qui valide aussi les optimisations.
+
+Les autres garde-fous : propriété \og un swap au taux de par vaut zéro \fg, symétrie payeur/receveur,
+propriété de somme des DV01 (\code{hypothesis}), égalité au bit près entre une reconstruction mémoïsée et
+une reconstruction à neuf, test d'intégration SDK $\to$ HTTP $\to$ cœur et \emph{golden file} de la
+phase~2.
+
+\section{Limites et prolongements}
+\begin{itemize}
+  \item Données synthétiques : les niveaux de taux et de base ne sont pas ceux du marché ; le fixing
+    du jour de l'Euribor est pris égal au dépôt spot du snapshot.
+  \item Pas de FRA, de \emph{basis swap} ni de swap avec stub à la cotation (la maturité 18M n'est pas
+    calibrée sur l'Euribor).
+  \item Risque par bump-and-reprice (différences finies) ; la différentiation automatique, hors v1,
+    réduirait le coût sans changer le contrat.
+  \item Phase~3 : scénarios (parallèle, \emph{steepener}, \emph{flattener}, \emph{twist}), carry et
+    \emph{roll-down}, USD (SOFR) par simple configuration.
+\end{itemize}
+
+\appendix
+\section{Reproduire le document}
+\begin{lstlisting}[language=bash,caption={Régénérer les chiffres puis compiler.},numbers=none]
+uv run python docs/latex/generate_irs_data.py     # nombres, tableaux, figures
+pdflatex pricing_irs.tex && pdflatex pricing_irs.tex   # deux passes
+\end{lstlisting}
+Le script appelle le pricer sur le snapshot \code{EUR_2026-10-19} et écrit \texttt{generated/irs\_*.tex}
+et \texttt{data/irs\_*.dat} : aucun nombre de ce document n'est saisi à la main, à l'exception des écarts
+de validation (tableau de la \S\ref{sec:valid}), mesurés par les tests de \code{tests/validation/} et
+consignés dans l'ADR-031.
+
+\end{document}

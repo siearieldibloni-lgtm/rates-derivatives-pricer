@@ -4,9 +4,9 @@ Un **pricer de dérivés de taux** extensible, de type production, en Python : b
 service FastAPI, SDK Python et dashboard Streamlit.
 
 > Statut : **Phase 0 terminée** (outillage, CI, logging). **Phase 1 terminée** (swap OIS €STR de bout en bout :
-> cotations -> courbe -> PV -> API -> SDK -> dashboard, validé contre QuantLib). **Phase 2 implémentée** (IRS vanille
+> cotations -> courbe -> PV -> API -> SDK -> dashboard, validé contre QuantLib). **Phase 2 terminée** (IRS vanille
 > contre Euribor 3M/6M, bootstrap multi-courbes, risque par bump-and-reprice : DV01 parallèle, par bucket, par courbe,
-> convexité ; validée contre QuantLib, en attente de fusion). **Phase 3 à venir** (scénarios, carry/roll-down, USD).
+> convexité ; validée contre QuantLib). **Phase 3 à venir** (scénarios, carry/roll-down, USD).
 > Voir `docs/ROADMAP.md`.
 >
 > Les données de marché fournies (`data/market/EUR_2026-10-19.json`) sont **synthétiques** (ADR-023).
@@ -116,6 +116,7 @@ Avec Docker (phase 4) : `docker compose up`.
 | `docs/API.md` | Contrat HTTP, erreurs, logs |
 | `docs/DECISIONS.md` | Journal des décisions |
 | `docs/PHASE1.md` | Guide pédagogique de la phase 1 : chaque fichier et son rôle |
+| `docs/latex/pricing_irs.pdf` | Théorie, pratique et implémentation des IRS vanilles (multi-courbes, risque), avec exemple chiffré ; source `pricing_irs.tex`, chiffres générés par `generate_irs_data.py` |
 
 ## Langue
 
