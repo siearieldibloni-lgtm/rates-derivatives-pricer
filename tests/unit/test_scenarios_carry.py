@@ -12,11 +12,13 @@ from rate_derivatives_pricer.core.conventions.calendar import TargetCalendar
 from rate_derivatives_pricer.core.conventions.currency import CurrencyConventions
 from rate_derivatives_pricer.core.conventions.day_count import Act360
 from rate_derivatives_pricer.core.conventions.tenor import Tenor, TimeUnit
-from rate_derivatives_pricer.core.engines.base import engine_for
+from rate_derivatives_pricer.core.engines.base import PricingEngine, engine_for
+from rate_derivatives_pricer.core.engines.results import PricingResult
 from rate_derivatives_pricer.core.errors import (
     ConventionError,
     MarketDataError,
     RiskComputationError,
+    UnsupportedInstrumentError,
     UnsupportedRiskMeasureError,
     UnsupportedScenarioError,
 )
@@ -26,6 +28,7 @@ from rate_derivatives_pricer.core.instruments.cashflows import (
 )
 from rate_derivatives_pricer.core.instruments.swaps import Instrument, Swap
 from rate_derivatives_pricer.core.market.bootstrap import CurveBuilder
+from rate_derivatives_pricer.core.market.environment import MarketEnvironment
 from rate_derivatives_pricer.core.market.quotes import (
     DepositQuote,
     IborSwapQuote,
@@ -461,3 +464,20 @@ def test_carry_failure_at_the_horizon_is_a_risk_computation_error(
     with pytest.raises(RiskComputationError) as error:
         CarryRolldown(Failing()).compute(swap, snapshot, Tenor.parse("1M"))
     assert error.value.details["horizon"] == "1M"
+
+
+def test_engines_without_carry_support_refuse_it() -> None:
+    class PvOnlyEngine(PricingEngine):
+        method: ClassVar[str] = "pv_only"
+        supported_instruments: ClassVar[tuple[str, ...]] = ("stub",)
+
+        def price(self, instrument: Instrument, env: MarketEnvironment) -> PricingResult:
+            raise NotImplementedError
+
+    engine, env = PvOnlyEngine(), flat_environment(0.02)
+    with pytest.raises(UnsupportedInstrumentError):
+        engine.cashflows_paid(_StubInstrument(), env, VALUATION_DATE, date(2027, 1, 19))
+    with pytest.raises(UnsupportedInstrumentError):
+        engine.accrued_interest(_StubInstrument(), env, VALUATION_DATE, date(2027, 1, 19))
+    with pytest.raises(NotImplementedError):
+        engine.present_value(_StubInstrument(), env)

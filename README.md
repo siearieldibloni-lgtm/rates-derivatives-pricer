@@ -95,7 +95,9 @@ from rate_derivatives_pricer.sdk import PricerClient, ois_swap, scenario, vanill
 with PricerClient("http://localhost:8000") as client:
     swap = vanilla_irs(10_000_000, 0.025, "pay_fixed", "10Y")
     shocked = client.scenarios(
-        "EUR_2026-10-19", swap, ["parallel_up", "steepener"],
+        "EUR_2026-10-19",
+        swap,
+        ["parallel_up", "steepener"],
         [scenario("bear_steepener", {"2Y": 0.0, "10Y": 30.0})],
     )
     for result in shocked.result.scenarios:
