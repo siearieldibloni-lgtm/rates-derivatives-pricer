@@ -9,7 +9,8 @@ service FastAPI, SDK Python et dashboard Streamlit.
 > convexité ; validée contre QuantLib). **Phase 3 à venir** (scénarios, carry/roll-down, USD).
 > Voir `docs/ROADMAP.md`.
 >
-> Les données de marché fournies (`data/market/EUR_2026-10-19.json`) sont **synthétiques** (ADR-023).
+> Les données de marché fournies (`data/market/EUR_2026-10-19.json`, `EUR_2026-10-20.json`, `USD_2026-10-19.json`)
+> sont **synthétiques** (ADR-023, ADR-032, ADR-033).
 
 ## Objectifs
 
@@ -83,6 +84,25 @@ with PricerClient("http://localhost:8000") as client:
     )
     for measure in risk.result.measures:
         print(measure.measure, measure.value, measure.unit)
+```
+
+Scénarios (presets parallèle ±100 bp, steepener, flattener, twist, ou formes personnalisées), carry/roll-down sous
+l'hypothèse de courbe inchangée, et l'USD (SOFR), ajouté par simple configuration :
+
+```python
+from rate_derivatives_pricer.sdk import PricerClient, ois_swap, scenario, vanilla_irs
+
+with PricerClient("http://localhost:8000") as client:
+    swap = vanilla_irs(10_000_000, 0.025, "pay_fixed", "10Y")
+    shocked = client.scenarios(
+        "EUR_2026-10-19", swap, ["parallel_up", "steepener"],
+        [scenario("bear_steepener", {"2Y": 0.0, "10Y": 30.0})],
+    )
+    for result in shocked.result.scenarios:
+        print(result.name, result.pnl)
+    carry = client.carry_rolldown("EUR_2026-10-19", swap, horizon="3M").result
+    print(carry.carry, carry.rolldown, carry.total)
+    sofr = client.price("USD_2026-10-19", ois_swap(1e7, 0.033, "pay_fixed", "5Y", currency="USD"))
 ```
 
 Le cœur s'utilise aussi seul, par exemple dans un notebook :
