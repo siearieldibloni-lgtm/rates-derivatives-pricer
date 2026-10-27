@@ -1,0 +1,27 @@
+{
+  "currency": "USD",
+  "calendar": "US_SOFR",
+  "spot_lag_days": 2,
+  "curve_day_count": "ACT/365F",
+  "overnight_index": {
+    "name": "SOFR",
+    "calendar": "US_SOFR",
+    "day_count": "ACT/360"
+  },
+  "deposit": {
+    "settlement_days": 0,
+    "business_day_convention": "MODIFIED_FOLLOWING",
+    "end_of_month": false,
+    "day_count": "ACT/360"
+  },
+  "ois": {
+    "fixed_frequency": "ANNUAL",
+    "fixed_day_count": "ACT/360",
+    "floating_frequency": "ANNUAL",
+    "floating_day_count": "ACT/360",
+    "business_day_convention": "MODIFIED_FOLLOWING",
+    "end_of_month": true,
+    "rule": "BACKWARD",
+    "payment_lag_days": 2
+  }
+}

@@ -200,6 +200,114 @@ def _is_target_holiday(d: date) -> bool:
     return (month, day) == (12, 31) and year in TARGET_DECEMBER_31_CLOSING_YEARS
 
 
+# US holiday rules: weekday numbers (date.weekday()) and the first year a rule applies.
+MONDAY, THURSDAY, SUNDAY = 0, 3, 6
+JUNETEENTH_FIRST_YEAR = 2022
+# From 1996 on, a Good Friday that is also the first Friday of its month (non-farm payroll release
+# day) is an early close, not a full close, of the US government bond market (SIFMA).
+GOOD_FRIDAY_NFP_RULE_START_YEAR = 1996
+FIRST_WEEK_LAST_DAY = 7
+DAYS_PER_WEEK = 7
+# Unscheduled full closes of the US government bond market (presidential funerals, hurricane).
+US_GOVERNMENT_BOND_SPECIAL_CLOSINGS = frozenset(
+    {
+        date(2004, 6, 11),  # President Reagan's funeral
+        date(2012, 10, 30),  # Hurricane Sandy
+        date(2018, 12, 5),  # President G.H.W. Bush's funeral
+    }
+)
+
+
+def _nth_weekday(year: int, month: int, weekday: int, n: int) -> date:
+    """``n``-th ``weekday`` of a month (``n = -1``: the last one)."""
+    if n > 0:
+        first = date(year, month, 1)
+        offset = (weekday - first.weekday()) % DAYS_PER_WEEK + DAYS_PER_WEEK * (n - 1)
+        return first + timedelta(days=offset)
+    last = end_of_month(date(year, month, 1))
+    return last - timedelta(days=(last.weekday() - weekday) % DAYS_PER_WEEK)
+
+
+def _observed(d: date) -> date:
+    """Fixed-date US holiday: observed on Friday if on Saturday, on Monday if on Sunday."""
+    if d.weekday() == SATURDAY:
+        return d - ONE_DAY
+    if d.weekday() == SUNDAY:
+        return d + ONE_DAY
+    return d
+
+
+def _monday_if_sunday(d: date) -> date:
+    """Holiday moved to Monday if on Sunday, but not to Friday if on Saturday."""
+    return d + ONE_DAY if d.weekday() == SUNDAY else d
+
+
+@lru_cache(maxsize=EASTER_CACHE_SIZE)
+def _us_government_bond_holidays(year: int, good_friday_always: bool) -> frozenset[date]:
+    """Weekday holidays of the US government bond market (SIFMA recommendations) in ``year``.
+
+    Args:
+        year: Calendar year.
+        good_friday_always: Treat every Good Friday as a holiday (SOFR publication calendar)
+            instead of applying the non-farm payroll early-close exception.
+    """
+    holidays = {
+        _monday_if_sunday(date(year, 1, 1)),  # New Year's Day
+        _nth_weekday(year, 1, MONDAY, 3),  # Martin Luther King Jr. Day
+        _nth_weekday(year, 2, MONDAY, 3),  # Washington's Birthday (Presidents' Day)
+        _nth_weekday(year, 5, MONDAY, -1),  # Memorial Day
+        _observed(date(year, 7, 4)),  # Independence Day
+        _nth_weekday(year, 9, MONDAY, 1),  # Labor Day
+        _nth_weekday(year, 10, MONDAY, 2),  # Columbus Day
+        _monday_if_sunday(date(year, 11, 11)),  # Veterans Day
+        _nth_weekday(year, 11, THURSDAY, 4),  # Thanksgiving Day
+        _observed(date(year, 12, 25)),  # Christmas Day
+    }
+    if year >= JUNETEENTH_FIRST_YEAR:
+        holidays.add(_observed(date(year, 6, 19)))  # Juneteenth National Independence Day
+    good_friday = easter_sunday(year) - 2 * ONE_DAY
+    early_close = year >= GOOD_FRIDAY_NFP_RULE_START_YEAR and good_friday.day <= FIRST_WEEK_LAST_DAY
+    if good_friday_always or not early_close:
+        holidays.add(good_friday)
+    holidays.update(d for d in US_GOVERNMENT_BOND_SPECIAL_CLOSINGS if d.year == year)
+    return frozenset(holidays)
+
+
+@CALENDARS.register("US_GOVERNMENT_BOND")
+@dataclass(frozen=True, slots=True)
+class UsGovernmentBondCalendar(Calendar):
+    """US government bond market calendar (SIFMA recommended full closes).
+
+    Holidays: weekends, New Year's Day (Monday if on Sunday), Martin Luther King Jr. Day,
+    Presidents' Day, Good Friday (except, from 1996, when it is the first Friday of the month:
+    early close only), Memorial Day, Juneteenth (from 2022), Independence Day, Labor Day, Columbus
+    Day, Veterans Day (Monday if on Sunday), Thanksgiving, Christmas, plus a few unscheduled
+    closes. Independence Day, Juneteenth and Christmas falling on a weekend are observed on the
+    Friday before or the Monday after.
+    """
+
+    name: ClassVar[str] = "US_GOVERNMENT_BOND"
+
+    def is_business_day(self, d: date) -> bool:
+        """``False`` on weekends and US government bond market holidays."""
+        return d.weekday() < SATURDAY and d not in _us_government_bond_holidays(d.year, False)
+
+
+@CALENDARS.register("US_SOFR")
+@dataclass(frozen=True, slots=True)
+class UsSofrCalendar(Calendar):
+    """Publication calendar of SOFR: the US government bond calendar, closed every Good Friday.
+
+    SOFR is not published on Good Friday, even when the bond market only closes early (ADR-032).
+    """
+
+    name: ClassVar[str] = "US_SOFR"
+
+    def is_business_day(self, d: date) -> bool:
+        """``False`` on weekends, US government bond market holidays and every Good Friday."""
+        return d.weekday() < SATURDAY and d not in _us_government_bond_holidays(d.year, True)
+
+
 @dataclass(frozen=True, slots=True)
 class JointCalendar(Calendar):
     """Union of holidays: a day is a business day only if it is one in every calendar."""
