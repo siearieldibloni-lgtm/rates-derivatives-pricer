@@ -25,10 +25,11 @@ Package : `rate_derivatives_pricer` (repo : `rate-derivatives-pricer`).
   couches (import-linter) et squelette de logging en place ; 21 tests verts.
 - **Phase 1 (tranche verticale, swap OIS €STR) : TERMINÉE et fusionnée** (PR #3). Cœur, service, API, SDK et
   dashboard en place ; 265 tests verts dont la validation QuantLib, couverture `core/` 99 %, CI verte.
-- **Phase 2 (IRS vanille, multi-courbes, risque de base) : IMPLÉMENTÉE** sur la branche
-  `phase-2-irs-multicurve-risk` (PR à fusionner, puis clôture des docs comme en phase 1). IRS contre Euribor 3M/6M,
-  bootstrap multi-courbes, `/v1/risk` (DV01 parallèle / par bucket / par courbe, convexité) ; validée contre QuantLib.
-- **Phase courante : 2 jusqu'à la fusion de la PR, puis 3 (risque avancé)**.
+- **Phase 2 (IRS vanille, multi-courbes, risque de base) : TERMINÉE et fusionnée** (PR #7). IRS contre Euribor
+  3M/6M, bootstrap multi-courbes, `/v1/risk` (DV01 parallèle / par bucket / par courbe, convexité) ; 425 tests verts
+  dont la validation QuantLib, couverture totale 96 %, CI verte.
+- **Phase courante : 3 (risque avancé : scénarios, carry/roll-down, USD par configuration)**. Branche à créer :
+  `phase-3-advanced-risk`.
 - Conventions EUR dans `core/conventions/data/EUR.json` (ADR-019, Euribor et IRS : ADR-027) ; fixings et composition
   overnight : ADR-020 ; bootstrap multi-courbes : ADR-028 ; définitions du risque : ADR-029.
 - Logging : `rate_derivatives_pricer.api.logging_config` (`configure_logging`, `request_context`). Le cœur se

@@ -77,9 +77,9 @@ Une phase = une branche = une PR. La CI doit passer avant la fusion ;
   un test d'intégration vérifie que SDK -> HTTP -> API -> services -> cœur donne exactement les mêmes nombres que le
   cœur appelé directement, et un *golden file* fige les résultats de référence.
 
-## Phase 2 : IRS vanille, multi-courbes, risque de base — IMPLÉMENTÉE
+## Phase 2 : IRS vanille, multi-courbes, risque de base — TERMINÉE
 
-> Branche `phase-2-irs-multicurve-risk`, en attente de fusion (puis clôture des docs comme en phase 1).
+> Fusionnée dans `main` (PR #7, branche `phase-2-irs-multicurve-risk`). CI verte sur la PR. Prochaine phase : la phase 3.
 > Conventions validées avant implémentation (ADR-027) ; décisions de la phase : ADR-027 à ADR-031.
 
 **Livrables**
@@ -98,7 +98,7 @@ Une phase = une branche = une PR. La CI doit passer avant la fusion ;
 - **Cohérence interne** : somme des DV01 par bucket ≈ DV01 parallèle (test de propriété, tolérance documentée).
 - Ajout d'une mesure de risque de test **sans modifier** `risk/` ni les moteurs (preuve d'extensibilité).
 
-**Bilan de vérification** (en local sous Windows ; la CI Linux le rejouera sur la PR)
+**Bilan de vérification** (en local sous Windows et sur la CI GitHub sous Linux)
 - Boucle `ruff check`, `ruff format --check`, `mypy` (strict sur `core/` et `services/`), `lint-imports` (5 contrats) et
   `pytest` : **424 tests verts** (dont 152 de validation QuantLib), couverture totale **96 %**, `core/` >= 94 % par fichier.
 - Courbes Euribor 3M et 6M sur 9 marchés x 2 interpolations : écart DF max **3,5e-13** (`log_linear_df`) et 3,0e-12
