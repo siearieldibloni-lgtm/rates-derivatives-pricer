@@ -72,7 +72,13 @@ def test_sdk_and_core_give_identical_results(sdk: PricerClient) -> None:
 
 def test_curve_build_through_the_sdk_reprices_quotes(sdk: PricerClient) -> None:
     curve = sdk.build_curves(SNAPSHOT).result.curves[0]
-    quotes = {q.tenor: q.value / 100 for q in sdk.get_snapshot(SNAPSHOT).quotes}
+    assert curve.curve_name == "EUR-ESTR"
+    # Only the overnight quotes calibrate this curve; Ibor quotes reuse the same tenor labels.
+    quotes = {
+        q.tenor: q.value / 100
+        for q in sdk.get_snapshot(SNAPSHOT).quotes
+        if q.type in {"deposit", "ois_swap"}
+    }
     for node in curve.nodes:
         assert node.implied_quote == pytest.approx(quotes[node.label], abs=1e-13)
 
