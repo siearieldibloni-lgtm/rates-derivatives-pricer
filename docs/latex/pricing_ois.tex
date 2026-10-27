@@ -1,0 +1,1310 @@
+% =============================================================================
+% Valorisation des swaps OIS EUR (ESTR) : theorie et implementation
+% Compiler avec :  pdflatex pricing_ois.tex  (deux passes)
+% Les chiffres, tableaux et donnees des figures sont generes par
+% generate_data.py a partir du code du depot (voir README en fin de document).
+% =============================================================================
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[french]{babel}
+\usepackage{textcomp}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{microtype}
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{booktabs,array,tabularx,longtable}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,fit,calc,babel}
+\usepackage{pgfplots}
+\pgfplotsset{compat=newest}
+\pgfkeys{/pgf/number format/.cd, use comma}
+\usepackage{fancyhdr}
+\usepackage[font=small,labelfont=bf]{caption}
+\usepackage[colorlinks=true,linkcolor=NavyBlue,urlcolor=NavyBlue,citecolor=NavyBlue]{hyperref}
+
+% --- Mise en page ------------------------------------------------------------
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.55em}
+\setlength{\emergencystretch}{3em}
+\setlist{itemsep=0.15em,topsep=0.3em}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small Valorisation des swaps OIS \texteuro STR}
+\fancyhead[R]{\small\leftmark}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0.3pt}
+
+% --- Macros ------------------------------------------------------------------
+\newcommand{\estr}{\texorpdfstring{\texteuro STR}{EUR STR}}
+\newcommand{\code}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\pct}[1]{#1\,\%}
+\newcommand{\eur}{\ifmmode\,\text{\texteuro}\else\,\texteuro\fi}
+\newcommand{\DF}[1]{P(#1)}
+\DeclareMathOperator{\adj}{adj}
+\DeclareMathOperator{\adv}{adv}
+
+\theoremstyle{plain}
+\newtheorem{proposition}{Proposition}
+\theoremstyle{definition}
+\newtheorem{definition}{Définition}
+\theoremstyle{remark}
+\newtheorem*{remarque}{Remarque}
+
+% --- Listings ----------------------------------------------------------------
+\definecolor{codebg}{gray}{0.96}
+\definecolor{codekw}{rgb}{0.10,0.25,0.55}
+\definecolor{codecm}{rgb}{0.30,0.45,0.30}
+\lstset{
+  language=Python,
+  basicstyle=\fontsize{7.6}{9.2}\selectfont\ttfamily,
+  keywordstyle=\color{codekw}\bfseries,
+  commentstyle=\color{codecm}\itshape,
+  stringstyle=\color{BrickRed},
+  backgroundcolor=\color{codebg},
+  frame=single,
+  rulecolor=\color{black!25},
+  breaklines=true,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  aboveskip=0.6em,
+  belowskip=0.4em,
+  captionpos=b,
+}
+\renewcommand{\lstlistingname}{Listing}
+\lstdefinelanguage{json}{morestring=[b]", sensitive=false}
+
+% --- Figures -----------------------------------------------------------------
+\pgfplotsset{
+  every axis/.append style={
+    grid=major, grid style={black!12}, tick label style={font=\footnotesize},
+    label style={font=\footnotesize}, legend style={font=\footnotesize, draw=black!30},
+  },
+}
+\tikzset{
+  layer/.style={draw, rounded corners=3pt, minimum width=5.4cm, minimum height=0.9cm,
+    align=center, fill=blue!6},
+  proc/.style={draw, rounded corners=3pt, minimum width=2.9cm, minimum height=0.95cm,
+    align=center, fill=blue!6, font=\small},
+  data/.style={draw, rounded corners=3pt, minimum height=0.8cm, align=center,
+    fill=orange!12, font=\small},
+  flow/.style={-{Stealth[length=2.4mm]}, thick},
+}
+
+% --- Chiffres generes par generate_data.py -----------------------------------
+\input{generated/numbers.tex}
+
+\title{\textbf{Valorisation des swaps OIS \estr{}}\\[0.4em]
+  \large Théorie du pricing et implémentation dans le pricer de dérivés de taux}
+\author{Projet \texttt{rate-derivatives-pricer} -- phase 1}
+\date{\today}
+
+\begin{document}
+\maketitle
+\thispagestyle{empty}
+
+\begin{abstract}
+\noindent
+Ce document présente, d'une part, la théorie de la valorisation d'un swap de taux indexé sur un taux
+overnight (OIS) en monnaie euro : capitalisation du taux \estr{}, valorisation par actualisation sur
+une courbe unique, taux de par, annuité, construction de la courbe par \emph{bootstrap}. Il expose,
+d'autre part, les choix de conception et l'implémentation de la phase~1 du projet : bibliothèque
+quantitative en Python et NumPy, service FastAPI, client Python typé et tableau de bord Streamlit.
+Chaque résultat chiffré (courbe, exemples, écarts) est produit par le code du dépôt, et
+l'implémentation est validée contre QuantLib avec des écarts de l'ordre de \MaxGapLogLinear{} sur les
+facteurs d'actualisation.
+
+\medskip\noindent
+\textbf{Avertissement.} Les données de marché utilisées (snapshot \code{EUR_2026-10-19}) sont
+\emph{synthétiques} : aucun niveau de taux de ce document ne doit être lu comme une cotation réelle.
+\end{abstract}
+
+\newpage
+{\setlength{\parskip}{0pt}\tableofcontents}
+\newpage
+
+% =============================================================================
+\part{Théorie : la valorisation d'un swap OIS}
+% =============================================================================
+
+\section{Introduction}
+
+Un \emph{swap OIS} (Overnight Indexed Swap) échange un taux fixe contre le taux overnight capitalisé
+jour après jour sur la période. Depuis la crise de 2008, c'est l'instrument de référence pour
+construire la courbe d'actualisation des produits collatéralisés : le taux overnight est le taux de
+rémunération du collatéral, de sorte que la courbe OIS est le taux « sans risque » du marché
+interbancaire~\cite{piterbarg2010,henrard2014}. En zone euro, l'indice est l'\estr{} (\emph{euro
+short-term rate}), publié par la BCE depuis octobre~2019 à partir des opérations de dépôt non
+garanties des banques ; il a remplacé l'EONIA, calculé d'octobre~2019 à janvier~2022 comme l'\estr{}
+majoré de $8{,}5$~points de base.
+
+\paragraph{Plan.} La partie~I est autonome : elle pose les notations (section~\ref{sec:notations}),
+la capitalisation de l'\estr{} (section~\ref{sec:estr}), le swap (section~\ref{sec:swap}), sa
+valorisation (section~\ref{sec:pricing}), la construction de la courbe (section~\ref{sec:bootstrap})
+et le calcul des dates (section~\ref{sec:dates}). La partie~II décrit comment ces objets sont codés,
+pourquoi les choix ont été faits ainsi, et comment le résultat est validé.
+
+\paragraph{Périmètre.} La phase~1 couvre le swap OIS en euro, avec une courbe unique (actualisation
+et projection sur la même courbe \estr{}). Les swaps contre Euribor, le multi-courbes et le calcul
+de risque (DV01, key-rate, convexité) sont prévus en phase~2 (section~\ref{sec:limites}).
+
+% -----------------------------------------------------------------------------
+\section{Cadre et notations}\label{sec:notations}
+
+\subsection{Facteurs d'actualisation, taux zéro et taux forward}
+
+Soit $t_0$ la date de valorisation. Le \emph{facteur d'actualisation} (\emph{discount factor}) $\DF{t}$
+est la valeur en $t_0$ d'un euro reçu en $t\ge t_0$, avec $\DF{t_0}=1$. La courbe est décrite par
+ses valeurs en des dates \emph{piliers} et par un schéma d'interpolation. Le temps y est mesuré avec
+la convention Act/365F : $\theta(d)=(d-t_0)/365$ en années.
+
+\begin{definition}[Taux zéro, forward simple, forward instantané]
+Pour une date $d>t_0$ et deux dates $s<e$ de longueur $\tau(s,e)$ selon une convention de décompte :
+\begin{align}
+  z(d) &= -\frac{\ln \DF{d}}{\theta(d)}\quad\text{(taux zéro, capitalisation continue)},\\
+  F(s,e) &= \frac{1}{\tau(s,e)}\left(\frac{\DF{s}}{\DF{e}}-1\right)\quad\text{(forward simple)},
+  \label{eq:forward}\\
+  f(d) &= -\frac{\partial \ln \DF{d}}{\partial \theta}\quad\text{(forward instantané)}.
+\end{align}
+\end{definition}
+
+Le forward simple $F(s,e)$ est le taux qui, appliqué à l'euro placé en $s$ jusqu'en $e$ sans risque,
+rend l'opération équivalente à l'actualisation par la courbe : $1+F(s,e)\,\tau(s,e)=\DF{s}/\DF{e}$.
+
+\subsection{Conventions de décompte}
+
+La fraction d'année $\tau(d_1,d_2)$ dépend d'une convention (définitions ISDA~\cite{isda2006}).
+Celles retenues sont :
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X@{}}
+\toprule
+Convention & Définition de $\tau(d_1,d_2)$\\
+\midrule
+Act/360 & $(d_2-d_1)/360$ (nombre exact de jours). Taux monétaires, \estr{}, jambes d'un OIS EUR.\\
+Act/365F & $(d_2-d_1)/365$. Mesure du temps des courbes (interpolation).\\
+30/360 (Bond Basis) &
+  $\dfrac{360(Y_2-Y_1)+30(M_2-M_1)+(D_2'-D_1')}{360}$ avec $D_1'=\min(D_1,30)$ et $D_2'=30$ si
+  $D_2=31$ et $D_1'=30$, sinon $D_2'=D_2$.\\
+30E/360 (Eurobond) & Même formule avec $D_i'=\min(D_i,30)$.\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Calendriers et jours ouvrés}
+
+Le calendrier TARGET compte comme jours fériés, en plus des week-ends : le 1\ier{} janvier, le
+vendredi saint, le lundi de Pâques, le 1\ier{} mai, le 25 et le 26 décembre (les trois derniers
+depuis 2000 ; le 31 décembre était aussi fermé en 1998, 1999 et 2001). Le dimanche de Pâques est
+calculé par l'algorithme de Meeus--Jones--Butcher ; le vendredi saint est ce dimanche moins deux jours
+et le lundi de Pâques plus un jour.
+
+Une date tombant un jour non ouvré est déplacée selon une \emph{convention de jour ouvré}~:
+\emph{Following} (jour ouvré suivant), \emph{Preceding} (précédent), ou \emph{Modified Following} :
+jour ouvré suivant, sauf s'il change de mois, auquel cas on recule au jour ouvré précédent. On note
+$\adj_c(d)$ la date ajustée selon la convention $c$ et $\adv(d,n)$ la date située $n$ jours ouvrés
+après $d$.
+
+% -----------------------------------------------------------------------------
+\section{L'indice \estr{} et sa capitalisation}\label{sec:estr}
+
+L'\estr{} est un taux d'intérêt d'un jour ouvré à l'autre. Le \emph{fixing} du jour ouvré $d$ est le
+taux $r$ applicable de $d$ au jour ouvré suivant ; il est publié le jour ouvré suivant, donc connu
+seulement a posteriori.
+
+Sur une période de calcul $[S,E]$, soit $S=d_0<d_1<\dots<d_n=E$ les jours ouvrés TARGET, $r_i$ le
+fixing du jour $d_i$ et $\delta_i=\tau_{360}(d_i,d_{i+1})$. Un investisseur qui replace chaque jour
+son capital au taux overnight obtient le facteur de capitalisation
+\begin{equation}
+  C \;=\; \prod_{i=0}^{n-1}\bigl(1+r_i\,\delta_i\bigr),
+  \qquad
+  R \;=\; \frac{C-1}{\tau(S,E)},
+  \label{eq:compounded}
+\end{equation}
+où $R$ est le \emph{taux overnight composé} de la période. Le montant d'intérêt sur un notionnel $N$
+est $N(C-1)=N\,R\,\tau(S,E)$. Cette capitalisation est dite \emph{en arrears} : le taux n'est connu
+qu'à la fin de la période. Dans ce document, on n'applique ni \emph{lookback}, ni \emph{lockout}, ni
+\emph{observation shift} : chaque fixing est utilisé le jour même.
+
+% -----------------------------------------------------------------------------
+\section{Le swap OIS}\label{sec:swap}
+
+\subsection{Structure}
+
+Un swap OIS de notionnel $N$, de date de départ $S$ et de maturité $E$ échange deux jambes :
+\begin{itemize}
+  \item la \textbf{jambe fixe}, qui verse à chaque date $T^{\mathrm{fix}}_j$ le coupon
+        $N\,K\,\tau^{\mathrm{fix}}_j$, où $K$ est le taux fixe ;
+  \item la \textbf{jambe overnight}, qui verse à chaque date $T_j$ le coupon
+        $N\,(C_j-1)$, où $C_j$ est le facteur \eqref{eq:compounded} de la période $[S_j,E_j]$.
+\end{itemize}
+Il n'y a pas d'échange de notionnel. Le détenteur d'un swap \emph{payeur} paie le taux fixe et reçoit
+la jambe overnight ; un swap \emph{receveur} fait l'inverse. Dans tout le document, la valeur
+actuelle (PV) est celle du point de vue du détenteur, et un montant reçu est compté positivement.
+
+Chaque jambe est découpée en périodes $[S_j,E_j]$ (\emph{accrual}) ; le paiement a lieu à
+$T_j=E_j$ augmenté d'un décalage de paiement (\emph{payment lag}) en jours ouvrés.
+
+\subsection{Conventions EUR retenues}\label{sec:conv-eur}
+
+Ces conventions ont été fixées avant l'implémentation (décision ADR-019) :
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{5.7cm}X@{}}
+\toprule
+Élément & Convention\\
+\midrule
+Calendrier & TARGET\\
+Décalage de départ (\emph{spot lag}) & 2 jours ouvrés après la date de valorisation\\
+Fréquence des deux jambes & Annuelle (une seule période si la maturité est d'un an ou moins)\\
+Décompte des deux jambes & Act/360\\
+Convention de jour ouvré & Modified Following (dates intermédiaires et maturité)\\
+Règle de fin de mois & Appliquée si le départ est le dernier jour ouvré du mois\\
+Génération de l'échéancier & \emph{Backward} depuis la maturité (période courte, ou \emph{stub}, en tête)\\
+Décalage de paiement & 1 jour ouvré TARGET après la fin de la période\\
+Capitalisation overnight & Quotidienne, en arrears, sans lookback, lockout ni observation shift\\
+Dépôt overnight (calibration) & Départ en $t_0$, fin au jour ouvré suivant, Act/360, taux simple\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+% -----------------------------------------------------------------------------
+\section{Valorisation d'un swap OIS}\label{sec:pricing}
+
+\subsection{Hypothèse de courbe unique}
+
+Le cadre est \emph{mono-courbe} : une seule courbe $P$ sert à actualiser les flux et à projeter les
+fixings futurs. Cette hypothèse est cohérente pour un OIS : l'indice est le taux de la courbe
+d'actualisation elle-même, de sorte que la capitalisation \eqref{eq:compounded} se réplique par un
+dépôt overnight reconduit chaque jour. On pose donc, pour tout fixing futur,
+$r_i=F(d_i,d_{i+1})$ au sens de \eqref{eq:forward} avec $\tau=\tau_{360}$.
+
+\subsection{Télescopage du coupon overnight}
+
+\begin{proposition}[Facteur de capitalisation projeté]\label{prop:telescope}
+Si tous les fixings de $[S,E]$ sont projetés sur la courbe, alors
+\[
+  C \;=\; \prod_{i=0}^{n-1}\bigl(1+F(d_i,d_{i+1})\,\delta_i\bigr) \;=\; \frac{\DF{S}}{\DF{E}}.
+\]
+\end{proposition}
+
+\begin{proof}
+Par définition \eqref{eq:forward}, $1+F(d_i,d_{i+1})\,\delta_i=\DF{d_i}/\DF{d_{i+1}}$. Le produit est
+télescopique : $\prod_{i=0}^{n-1}\DF{d_i}/\DF{d_{i+1}}=\DF{d_0}/\DF{d_n}$.
+\end{proof}
+
+La proposition~\ref{prop:telescope} est une identité exacte et non une approximation : elle dispense
+de boucler sur les jours de la période (environ 250 par coupon annuel) et ramène le calcul d'un
+coupon à deux évaluations de la courbe. Une vérification numérique est donnée à la
+section~\ref{sec:exemple}.
+
+\begin{remarque}
+Si le paiement avait lieu en $E$ sans décalage, la valeur de la jambe overnight serait
+$N\bigl(\DF{S}/\DF{E}-1\bigr)\DF{E}=N\bigl(\DF{S}-\DF{E}\bigr)$ : on retrouve la valeur d'un
+\emph{floating rate note}. Le décalage de paiement $T_j>E_j$ rompt ce télescopage exact (voir
+ci-dessous) et le montant, connu en $E_j$, est simplement actualisé de $T_j$.
+\end{remarque}
+
+\subsection{Valeur actuelle des deux jambes}
+
+\begin{proposition}[PV des jambes]\label{prop:legs}
+Soit $m$ coupons de dates d'accrual $[S_j,E_j]$ et de paiement $T_j$. Les valeurs actuelles,
+non signées, des deux jambes sont
+\begin{align}
+  V_{\mathrm{fix}} &= N\,K\sum_{j}\tau^{\mathrm{fix}}_j\,\DF{T^{\mathrm{fix}}_j} \;=\; K\,A,
+  \label{eq:vfix}\\
+  V_{\mathrm{ON}} &= N\sum_{j=1}^{m}\left(\frac{\DF{S_j}}{\DF{E_j}}-1\right)\DF{T_j},
+  \label{eq:von}
+\end{align}
+où $A=N\sum_j\tau^{\mathrm{fix}}_j\,\DF{T^{\mathrm{fix}}_j}$ est l'\emph{annuité}, exprimée en
+unités de monnaie (le notionnel est inclus).
+\end{proposition}
+
+Lorsque $T_j=E_j$ et que les périodes sont contiguës ($S_{j+1}=E_j$), la somme \eqref{eq:von} se
+télescope en $N\bigl(\DF{S_1}-\DF{E_m}\bigr)$. Avec un décalage de paiement, chaque terme est
+multiplié par le facteur $\DF{T_j}/\DF{E_j}$, proche de $1$ ; le résultat n'a plus de forme fermée
+aussi simple mais reste calculé exactement.
+
+\subsection{Taux de par, annuité et PVBP}
+
+\begin{definition}[Taux de par]
+Le \emph{taux de par} (ou taux de swap) est le taux fixe $S_0$ pour lequel le swap a une valeur
+nulle : $V_{\mathrm{fix}}=V_{\mathrm{ON}}$, soit
+\begin{equation}
+  S_0 \;=\; \frac{V_{\mathrm{ON}}}{A}.
+  \label{eq:par}
+\end{equation}
+\end{definition}
+
+La valeur d'un swap payeur de taux fixe $K$ est alors
+\begin{equation}
+  V_{\mathrm{payeur}} \;=\; V_{\mathrm{ON}}-V_{\mathrm{fix}} \;=\; A\,\bigl(S_0-K\bigr),
+  \qquad V_{\mathrm{receveur}}=-V_{\mathrm{payeur}}.
+  \label{eq:pv}
+\end{equation}
+Le taux de par est ce que le marché cote pour chaque maturité ; la formule \eqref{eq:pv} montre que
+la valeur du swap est l'écart au par, multiplié par l'annuité. Le \emph{PVBP} (\emph{present value of
+a basis point}) est la variation de la jambe fixe pour un point de base de taux fixe :
+$\mathrm{PVBP}=A\times10^{-4}$, de sorte que $\partial V_{\mathrm{payeur}}/\partial K=-A$.
+
+\subsection{Exemple chiffré : un swap payeur à 5 ans}\label{sec:exemple}
+
+Prenons, à la date de valorisation \ValuationDate{}, un swap payeur de notionnel
+$N=10\,000\,000\eur$, de taux fixe $K=\pct{2{,}25}$ et de maturité 5~ans, sur la courbe
+\estr{} du snapshot synthétique. Le swap démarre au \FiveYStart{} (spot) et arrive à échéance le
+\FiveYEnd{} ; il compte \FiveYCashflowCount{} flux futurs, soit 5 coupons par jambe. Le pricer
+renvoie :
+
+\begin{center}
+\begin{tabular}{@{}lr@{}}
+\toprule
+Grandeur & Valeur\\
+\midrule
+Taux de par $S_0$ & \FiveYParRate\,\%\\
+Annuité $A$ & \FiveYAnnuity\eur\\
+PVBP $=A\times10^{-4}$ & \FiveYPVBP\eur\\
+PV de la jambe fixe (payée) & \FiveYFixedLeg\eur\\
+PV de la jambe overnight (reçue) & \FiveYOvernightLeg\eur\\
+\textbf{PV du swap payeur} & \textbf{\FiveYPV\eur}\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+La relation \eqref{eq:pv} se vérifie : $A\,(S_0-K)=\FiveYPVCheck\eur$, identique à la PV renvoyée.
+
+\paragraph{Vérification du télescopage.} Pour le premier coupon overnight de ce swap
+(du \TelStart{} au \TelEnd{}), le produit des \TelDays{} taux overnight implicites de la courbe,
+calculés un à un sur les jours ouvrés TARGET, vaut $\TelProduct$, et le rapport
+$\DF{S}/\DF{E}$ vaut $\TelRatio$ ; l'écart est de \TelDiff{}, c'est-à-dire de l'ordre de l'erreur
+d'arrondi sur 257 multiplications en double précision.
+
+\subsection{Swap en cours de vie}
+
+Pour un swap déjà commencé à la date $t_0$, un coupon overnight $[S_j,E_j]$ peut être en partie
+réalisé. Soit $d_k$ le premier jour d'observation dont le fixing n'est pas encore publié. Alors
+\begin{equation}
+  C_j \;=\; \underbrace{\prod_{d_i<d_k}\bigl(1+r_i\,\delta_i\bigr)}_{\text{fixings publiés}}
+  \;\times\;\underbrace{\frac{\DF{d_k}}{\DF{E_j}}}_{\text{partie projetée}},
+  \label{eq:seasoned}
+\end{equation}
+où la partie projetée utilise de nouveau la proposition~\ref{prop:telescope}. Les règles suivantes
+s'appliquent (décision ADR-020) :
+\begin{itemize}
+  \item les fixings \emph{strictement antérieurs} à $t_0$ sont obligatoires ; leur absence est une
+        erreur de données de marché ;
+  \item le fixing du jour $t_0$ est utilisé s'il est fourni, sinon il est projeté ;
+  \item un flux payé en $t_0$ ou avant est échu et n'entre pas dans la PV.
+\end{itemize}
+
+% -----------------------------------------------------------------------------
+\section{Construction de la courbe par bootstrap}\label{sec:bootstrap}
+
+\subsection{Principe}
+
+Le marché cote les taux de par de swaps OIS de maturités $1\text{W},2\text{W},\dots,30\text{Y}$ ainsi
+que le taux du dépôt overnight. La courbe $P$ est déterminée par ses valeurs aux \emph{piliers}
+$T_1<\dots<T_K$ : le pilier d'un dépôt est sa maturité, celui d'un OIS est sa \emph{dernière date de
+paiement}, qui est la date la plus lointaine dont dépend son taux de par.
+
+\begin{definition}[Équations de calibration]
+Pour chaque instrument $k$ de cotation $q_k$, on cherche $P_k=\DF{T_k}$ tel que la cotation
+implicite de la courbe égale la cotation de marché :
+\begin{itemize}
+  \item dépôt overnight, de $s=t_0$ à $e$ : $q=\dfrac{1}{\tau_{360}(s,e)}\Bigl(\dfrac{1}{\DF{e}}-1\Bigr)$,
+        d'où la solution fermée $\DF{e}=1/\bigl(1+q\,\tau_{360}(s,e)\bigr)$ ;
+  \item OIS de maturité $k$ : $S_0\bigl(P_1,\dots,P_k\bigr)=q_k$, avec $S_0$ donné par
+        \eqref{eq:par}.
+\end{itemize}
+\end{definition}
+
+L'équation de l'OIS n'a pas de solution fermée : les facteurs d'actualisation aux dates
+intermédiaires sont interpolés entre piliers, et le taux de par dépend de $P_k$ de manière non
+linéaire. On la résout donc numériquement, pilier par pilier, dans l'ordre croissant des maturités.
+
+\paragraph{Pourquoi une seule passe suffit.} Avec une interpolation \emph{locale} (la valeur
+interpolée sur un segment $[T_{k-1},T_k]$ ne dépend que des nœuds $P_{k-1}$ et $P_k$), le taux de par
+de l'instrument $k$ ne dépend que des nœuds $P_1,\dots,P_k$, puisque tous ses flux sont datés au plus
+tard en $T_k$. Les nœuds déjà trouvés ne sont donc jamais remis en cause : l'algorithme est séquentiel
+et exact, sans itération globale.
+
+\subsection{Interpolation}
+
+Soit $\theta_k=\theta(T_k)$, avec $\theta_0=0$. Deux schémas sont disponibles :
+\begin{itemize}
+  \item \textbf{Log-linéaire sur les facteurs d'actualisation} (par défaut) : pour
+        $\theta\in[\theta_{k-1},\theta_k]$,
+        \[\ln P=\ln P_{k-1}+\frac{\theta-\theta_{k-1}}{\theta_k-\theta_{k-1}}\bigl(\ln P_k-\ln P_{k-1}\bigr),\]
+        ce qui revient à un forward instantané $f$ \emph{constant par morceaux}. C'est le standard des
+        courbes OIS~\cite{hagan2006}.
+  \item \textbf{Linéaire sur le taux zéro} : $z$ est linéaire en $\theta$ entre les nœuds, avec
+        $z(\theta\!=\!0)$ pris égal au zéro du premier pilier.
+\end{itemize}
+Au-delà du dernier pilier $\theta_K$, les deux schémas prolongent la courbe à \emph{forward instantané
+constant}. Pour le schéma log-linéaire, c'est le forward du dernier segment ; pour le schéma
+linéaire sur le zéro, c'est $f_K=z_K+\theta_K\,z'(\theta_K)$, d'où
+$-\ln P=z_K\,\theta_K+f_K\,(\theta-\theta_K)$.
+
+\subsection{Résolution numérique}
+
+Pour le pilier $k$, on cherche la racine de
+$g(P)=S_0(P_1,\dots,P_{k-1},P)-q_k$ dans l'intervalle
+\[
+  \Bigl[\,P_{k-1}\,e^{-1{,}0\,\Delta\theta},\;P_{k-1}\,e^{+0{,}5\,\Delta\theta}\,\Bigr],
+  \qquad \Delta\theta=\theta_k-\theta_{k-1},
+\]
+qui correspond à des forwards continus compris entre $-50\,\%$ et $+100\,\%$ : large pour tout
+marché réaliste, mais suffisamment serré pour que $g$ change de signe. Plus $P$ est faible, plus les
+taux implicites sont élevés ; $g$ est en pratique strictement décroissante, ce qui rend la racine
+unique dans l'intervalle.
+
+\paragraph{Méthode de Brent.} Brent~\cite{brent1973} combine la bissection (robuste, convergence
+linéaire), la sécante et l'interpolation quadratique inverse (convergence superlinéaire). À chaque
+itération, le pas d'interpolation n'est accepté que s'il reste à l'intérieur de l'encadrement et
+réduit suffisamment l'intervalle ; sinon on bissecte. La convergence est garantie dès que
+$g(P_{\min})$ et $g(P_{\max})$ sont de signes opposés.
+
+\paragraph{Méthode de Newton protégée.} Une variante de Newton--Raphson, avec dérivée par différences
+finies centrées, est disponible en option ; tout pas sortant de l'encadrement est remplacé par une
+bissection, ce qui lui conserve la robustesse de la bissection.
+
+\paragraph{Critère d'échec.} Un pilier dont le résidu final $\lvert S_0-q_k\rvert$ dépasse
+$10^{-12}$ (en taux décimal) est une erreur de calibration, qui identifie le pilier fautif et son
+résidu.
+
+% -----------------------------------------------------------------------------
+\section{Dates : spot, maturité, échéancier}\label{sec:dates}
+
+\paragraph{Date spot.} Avec le calendrier $\mathcal{C}$ et le décalage $\ell=2$ jours ouvrés :
+$t_{\mathrm{spot}}=\adv\bigl(\adj_{F}(t_0),\,\ell\bigr)$, où $F$ désigne \emph{Following}.
+
+\paragraph{Maturité.} Si la règle de fin de mois s'applique (le spot est le dernier jour ouvré de
+son mois), la maturité d'un swap de tenor $n$ mois est le dernier jour ouvré du mois situé $n$ mois
+plus tard. Sinon, c'est $t_{\mathrm{spot}}+n$ mois, ajustée ensuite par l'échéancier.
+
+\paragraph{Échéancier (génération \emph{backward}).}
+\begin{enumerate}
+  \item À partir de la date de fin, on recule par pas de la fréquence (1~an) tant que la date obtenue
+        n'est pas antérieure à la date de départ ; le reliquat plus court que la fréquence est une période courte
+        (\emph{stub}), placée en tête.
+  \item Si la règle de fin de mois s'applique, les dates intermédiaires et la date de fin sont ramenées
+        au dernier jour ouvré de leur mois ; la date de départ est seulement ajustée.
+  \item Sinon, chaque date est ajustée en Modified Following.
+  \item La date de paiement d'une période est la date de fin ajustée, avancée de 1 jour ouvré
+        TARGET.
+\end{enumerate}
+
+\paragraph{Illustration.} Pour un swap payeur à 2~ans de notionnel $10\,000\,000\eur$ et de taux fixe
+$\pct{2{,}00}$, le tableau~\ref{tab:cashflows} donne l'échéancier et les flux calculés. La
+deuxième période se termine le 2028-10-23 et non le 2028-10-21, qui est un samedi (Modified
+Following), et le paiement a lieu le jour ouvré suivant. Le taux de la jambe overnight est le taux
+composé \eqref{eq:compounded} de chaque période ; le taux de par vaut \TwoYParRate\,\%, l'annuité
+\TwoYAnnuity\eur{} et la PV du swap payeur \TwoYPV\eur.
+
+\begin{table}[ht]
+\centering
+\caption{Flux d'un swap payeur à 2 ans (notionnel $10^7\eur$, $K=\pct{2{,}00}$). Montants signés :
+positifs si reçus.}\label{tab:cashflows}
+\setlength{\tabcolsep}{3.2pt}
+\resizebox{\linewidth}{!}{\input{generated/table_cashflows.tex}}
+\end{table}
+
+% =============================================================================
+\part{Implémentation et choix techniques}
+% =============================================================================
+
+\section{Vue d'ensemble et principes}\label{sec:archi}
+
+\subsection{Architecture en couches}
+
+Le projet est un paquet Python unique, \code{rate_derivatives_pricer}, organisé en cinq couches dont
+les dépendances vont dans \emph{un seul sens} (figure~\ref{fig:layers}).
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[node distance=0.5cm]
+  \node[layer] (ui) {\textbf{ui}\\[-1pt]{\small Streamlit + Plotly}};
+  \node[layer, below=of ui] (sdk) {\textbf{sdk}\\[-1pt]{\small client typé \texttt{httpx}}};
+  \node[layer, below=of sdk] (api) {\textbf{api}\\[-1pt]{\small FastAPI, schémas Pydantic}};
+  \node[layer, below=of api] (srv) {\textbf{services}\\[-1pt]{\small orchestration, cache, mappers}};
+  \node[layer, below=of srv, fill=green!10] (core) {\textbf{core}\\[-1pt]{\small bibliothèque quantitative (NumPy)}};
+  \draw[flow] (ui) -- (sdk);
+  \draw[flow] (sdk) -- (api) node[midway, right=2pt, font=\scriptsize] {HTTP / JSON};
+  \draw[flow] (api) -- (srv);
+  \draw[flow] (srv) -- (core);
+  \node[right=2.2cm of srv, align=left, font=\small, text width=5.2cm] (rule)
+    {\textbf{Règle imposée par \texttt{import-linter}} : \texttt{core} n'importe rien des
+     autres couches, ni aucune bibliothèque web, SciPy ou QuantLib.};
+  \draw[dashed, black!50] (rule.west) -- ++(-0.9,0) |- (core.east);
+\end{tikzpicture}
+\caption{Couches du projet. Les flèches indiquent le sens de la dépendance.}\label{fig:layers}
+\end{figure}
+
+La règle est vérifiée en intégration continue par cinq contrats \code{import-linter} :
+(1)~la hiérarchie $\text{ui}\to\text{sdk}\to\text{api}\to\text{services}\to\text{core}$ ;
+(2)~\code{ui} n'atteint jamais \code{services} ni \code{core}, même indirectement ;
+(3)~\code{ui} n'importe jamais \code{api} directement ; (4)~\code{sdk} ne descend pas sous l'API ;
+(5)~\code{core} ne dépend d'aucun paquet web, d'interface, de SciPy ou de QuantLib.
+Un import interdit fait échouer la CI.
+
+\subsection{Principes transversaux}
+
+\begin{itemize}
+  \item \textbf{Immutabilité.} Instruments, cotations, échéanciers, snapshots et résultats sont des
+        \code{dataclass} figées (\code{frozen=True}, \code{slots=True}). Un choc de risque produira de nouveaux objets
+        plutôt que de modifier les anciens.
+  \item \textbf{Pas d'état global.} La date de valorisation est une donnée explicite du
+        \code{MarketSnapshot}. Le \code{Settings.evaluationDate} global de QuantLib n'est volontairement
+        pas reproduit (ADR-009) ; les tests alignent QuantLib sur la date du snapshot.
+  \item \textbf{Données et comportement séparés.} Un instrument décrit un contrat, un moteur le
+        valorise, un schéma d'API le transporte. Les instruments ne portent pas leur moteur,
+        contrairement à QuantLib (ADR-007).
+  \item \textbf{Conventions en configuration.} Aucune convention de marché n'est codée en dur
+        dans le calcul : elles sont lues dans un fichier JSON par devise (ADR-002, ADR-019).
+  \item \textbf{Erreurs typées.} Une exception par mode d'échec, traduite en code HTTP stable.
+  \item \textbf{Le cœur émet les logs, l'API les configure.} \code{core} n'utilise que le module
+        \code{logging} standard.
+\end{itemize}
+
+\subsection{Pipeline de calcul}
+
+Le flux est fonctionnel : le snapshot est transformé en environnement de marché par le bootstrap, puis l'instrument est valorisé dans cet environnement par un moteur sans état (figure~\ref{fig:pipeline}). Le risque se ramènera à « modifier le snapshot, puis rejouer le pipeline ».
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[node distance=0.55cm]
+  \node[data] (snap) {\code{MarketSnapshot}\\{\scriptsize date, cotations, fixings}};
+  \node[proc, right=of snap] (builder) {\code{CurveBuilder}\\{\scriptsize bootstrap}};
+  \node[data, right=of builder] (env) {\code{MarketEnvironment}\\{\scriptsize courbe, fixings}};
+  \node[proc, below=1.1cm of env] (engine) {\code{DiscountingSwapEngine}};
+  \node[data, left=of engine] (instr) {\code{OisSwap}\\{\scriptsize jambes, coupons}};
+  \node[data, below=0.9cm of engine] (res) {\code{PricingResult}\\{\scriptsize PV, par, annuité}};
+  \draw[flow] (snap) -- (builder);
+  \draw[flow] (builder) -- (env);
+  \draw[flow] (env) -- (engine);
+  \draw[flow] (instr) -- (engine);
+  \draw[flow] (engine) -- (res);
+\end{tikzpicture}
+\caption{Pipeline fonctionnel du cœur : chaque étape prend des entrées et renvoie une sortie.}
+\label{fig:pipeline}
+\end{figure}
+
+\section{Le cœur quantitatif}\label{sec:core}
+
+Le cœur ne dépend que de NumPy et de la bibliothèque standard. Il compte les sous-paquets
+suivants (la liste complète des modules figure en annexe~\ref{app:modules}).
+
+\subsection{Conventions : calendriers, décomptes, tenors}
+
+\code{core/conventions} implémente les objets de la section~\ref{sec:notations}.
+\code{Calendar} est une classe abstraite dont dérivent \code{TargetCalendar},
+\code{NullCalendar}, \code{WeekendsOnlyCalendar} et \code{JointCalendar} (union des jours fériés).
+Les jours fériés TARGET sont calculés par règles (Pâques par l'algorithme de Meeus) et mis en cache,
+car le calendrier est interrogé jour par jour. \code{Tenor} (« 3M », « 10Y », « ON ») et
+\code{Frequency} sont des objets valeur ; l'addition de mois ramène le jour à la longueur du mois
+cible (31~janvier + 1~mois = 28 ou 29~février).
+
+Les classes \code{Act360}, \code{Act365Fixed}, \code{Thirty360} et \code{Thirty360European} se
+déclarent dans un registre par un décorateur :
+
+\begin{lstlisting}[caption={Enregistrement d'un composant par décorateur (principe Open/Closed).}]
+@DAY_COUNTS.register("ACT/360")
+@dataclass(frozen=True, slots=True)
+class Act360(DayCountConvention):
+    name: ClassVar[str] = "ACT/360"
+
+    def day_count(self, start: date, end: date) -> int:
+        return (end - start).days
+
+    def year_fraction(self, start: date, end: date) -> float:
+        return self.day_count(start, end) / DAYS_PER_YEAR_360
+\end{lstlisting}
+
+Ajouter un composant revient donc à ajouter un fichier, sans modifier de ligne existante.
+Deux variantes 30/360 explicites (Bond Basis et Eurobond) remplacent une classe \code{Thirty360}
+ambiguë (ADR-019).
+
+\paragraph{Conventions de devise.} \code{CurrencyConventions} regroupe calendrier, \emph{spot lag},
+mesure du temps des courbes, indice overnight, conventions du dépôt et de l'OIS. Elle est construite
+à partir d'un fichier JSON par devise (listing~\ref{lst:eur}) ; l'ajout de l'USD en phase~3 se fera par
+un nouveau fichier, sans toucher au code de calcul.
+
+\begin{lstlisting}[language=json,caption={\code{core/conventions/data/EUR.json}.},label={lst:eur}]
+{
+  "currency": "EUR",
+  "calendar": "TARGET",
+  "spot_lag_days": 2,
+  "curve_day_count": "ACT/365F",
+  "overnight_index": { "name": "ESTR", "calendar": "TARGET", "day_count": "ACT/360" },
+  "deposit": { "settlement_days": 0, "business_day_convention": "MODIFIED_FOLLOWING",
+               "end_of_month": false, "day_count": "ACT/360" },
+  "ois": { "fixed_frequency": "ANNUAL", "fixed_day_count": "ACT/360",
+           "floating_frequency": "ANNUAL", "floating_day_count": "ACT/360",
+           "business_day_convention": "MODIFIED_FOLLOWING", "end_of_month": true,
+           "rule": "BACKWARD", "payment_lag_days": 1 }
+}
+\end{lstlisting}
+
+\subsection{Échéanciers}
+
+\code{ScheduleGenerator} transforme (départ, fin, fréquence) en une suite de \code{SchedulePeriod}
+(début et fin d'accrual, date de paiement, indicateur de période courte). Il suit pas à pas
+l'algorithme de la section~\ref{sec:dates}. La comparaison date par date avec QuantLib a révélé un
+détail de convention : en génération \emph{backward} avec la règle de fin de mois, QuantLib ne
+déplace \emph{pas} la date de départ en fin de mois, seule la date « pivot » l'est. Notre première version
+déplaçait les deux ; le test de validation l'a détecté et le générateur a été corrigé.
+
+\subsection{Données de marché}
+
+\begin{itemize}
+  \item \code{Quote} (\code{DepositQuote}, \code{OisSwapQuote}) porte \emph{toujours une unité}
+        explicite (\code{percent}, \code{decimal} ou \code{bp}) ; la propriété \code{rate} convertit en
+        décimal. Confondre $2{,}5$ et $0{,}025$ est un bug de production classique, que l'unité
+        obligatoire rend impossible.
+  \item \code{MarketSnapshot} regroupe la date de valorisation, les cotations et les fixings.
+        Il refuse les cotations en double et les fixings postérieurs à la date de valorisation.
+        C'est l'\emph{unité de choc} du futur calcul de risque.
+  \item \code{FileMarketDataProvider} lit \code{data/market/<nom>.json}. Les noms sont filtrés par
+        expression régulière pour interdire toute remontée d'arborescence (\code{../}). Le format
+        canonique du snapshot sert aussi de base à l'empreinte du cache.
+\end{itemize}
+
+\subsection{Courbes et interpolation}
+
+\code{DiscountCurve} est définie par des nœuds (date, facteur d'actualisation), un interpolateur et
+une convention de décompte interne. Le temps de chaque nœud est converti une fois, à la
+construction, en tableaux NumPy mis en cache dans l'objet figé. Les interpolateurs
+(\code{LogLinearOnDiscountFactor}, \code{LinearOnZeroRate}) sont deux stratégies interchangeables
+derrière une interface \code{Interpolator} qui travaille sur des tableaux : l'évaluation d'une courbe
+sur une grille de dates est vectorisée.
+
+\subsection{Solveurs}
+
+\code{BrentSolver} et \code{NewtonSolver} implémentent l'interface \code{Solver} (pas de SciPy dans
+le cœur, ADR-004). Ils renvoient un \code{SolverResult} (racine, résidu, itérations, convergence)
+plutôt que de lever une exception : c'est le bootstrap qui décide de la gravité d'un échec. La
+tolérance absolue par défaut est de $10^{-15}$ sur le facteur d'actualisation, et le nombre
+maximal d'itérations de 100.
+
+\subsection{Instruments de calibration et bootstrap}
+
+L'abstraction \code{CalibrationInstrument} est l'équivalent du \code{RateHelper} de QuantLib : pour
+une courbe candidate, elle calcule la cotation implicite et indique le pilier qu'elle détermine.
+\code{DepositCalibration} renvoie le forward simple entre début et fin ; \code{OisCalibration}
+construit un swap de notionnel~1 aux conventions de la devise et renvoie son taux de par. Cette
+abstraction rend le bootstrap générique : ajouter un instrument (un FRA, par exemple) n'exige
+aucune modification de \code{CurveBuilder}.
+
+\code{CurveBuilder.build(snapshot)} trie les instruments par pilier, refuse deux instruments sur le
+même pilier, puis résout chaque nœud avec le solveur. Le cœur de la boucle est le suivant
+(extrait, journalisation omise) :
+
+\begin{lstlisting}[caption={Calibration d'un pilier (\code{core/market/bootstrap.py}).}]
+market_quote = instrument.quote.rate
+previous_df = discount_factors[-1] if discount_factors else 1.0
+dt = template.time(pillar) - previous_time
+
+def objective(discount_factor: float) -> float:
+    candidate = template.with_pillars(dates, (*discount_factors, discount_factor))
+    return instrument.implied_quote(environment(candidate)) - market_quote
+
+result = self._solver.solve(
+    objective,
+    lower=previous_df * math.exp(-BRACKET_MAX_FORWARD_RATE * dt),
+    upper=previous_df * math.exp(-BRACKET_MIN_FORWARD_RATE * dt),
+    initial_guess=previous_df * math.exp(-market_quote * dt),
+)
+if not result.converged or not abs(result.residual) <= CALIBRATION_RESIDUAL_TOLERANCE:
+    raise CalibrationError(
+        f"bootstrap failed on pillar {instrument.label}",
+        pillar=instrument.label, residual=result.residual,
+    )
+\end{lstlisting}
+
+Le résultat est un \code{MarketEnvironment} : la courbe (qui sert à la fois d'actualisation et de
+projection de l'indice \code{ESTR}), les fixings et un \code{CalibrationReport} qui détaille chaque
+pilier (cotation, cotation implicite, résidu, itérations). Sur le snapshot de référence
+(\QuoteCount{} cotations), la calibration compte \PillarCount{} piliers, au plus \MaxIterations{}
+itérations par pilier et un résidu maximal de \MaxResidual{}, en environ 0,1~s. La
+figure~\ref{fig:curve} montre la courbe obtenue.
+
+\begin{figure}[ht]
+\centering
+\ref{curvelegend}\\[4pt]
+\begin{tikzpicture}
+\begin{axis}[
+  name=left, width=0.4\linewidth, height=6.2cm,
+  xlabel={Maturité (années)}, ylabel={Taux (\%)}, xmin=0, xmax=30,
+  legend to name=curvelegend, legend columns=3,
+]
+\addplot[blue!70!black, thick] table[x=t, y=zero]{data/curve.dat};
+\addlegendentry{Zéro continu (Act/365F)}
+\addplot[orange!85!black, thick, dashed] table[x=t, y=forward]{data/curve.dat};
+\addlegendentry{Forward 1M (Act/360)}
+\addplot[only marks, mark=*, mark size=1.4pt, black] table[x=t, y=zero]{data/pillars.dat};
+\addlegendentry{Piliers calibrés}
+\end{axis}
+\begin{axis}[
+  at={(left.east)}, anchor=west, xshift=1.3cm, width=0.4\linewidth, height=6.2cm,
+  xlabel={Maturité (années)}, ylabel={Facteur d'actualisation},
+  xmin=0, xmax=30, ymin=0.4, ymax=1,
+]
+\addplot[blue!70!black, thick] table[x=t, y=df]{data/curve.dat};
+\end{axis}
+\end{tikzpicture}
+\caption{Courbe \estr{} bootstrapée sur le snapshot synthétique du \ValuationDate{}, tracée à partir des
+données produites par le pricer.}\label{fig:curve}
+\end{figure}
+
+\subsection{Instruments, jambes et coupons}
+
+\begin{itemize}
+  \item \code{Cashflow} est une classe abstraite : chaque flux \emph{calcule lui-même son montant}
+        à partir du \code{MarketEnvironment} (ADR-007). \code{Coupon} (notionnel, dates d'accrual,
+        date de paiement, décompte) en dérive, avec \code{FixedCoupon} et
+        \code{OvernightCompoundedCoupon}.
+  \item \code{Leg} regroupe des flux, un notionnel et un sens (\code{PayReceive}, signe $\pm1$) :
+        la composition plutôt que l'héritage.
+  \item \code{OisSwap} décrit le contrat ; \code{SwapDirection} (\code{pay_fixed} ou
+        \code{receive_fixed}) est nommé d'après la jambe fixe.
+  \item \code{factories.py} construit un swap à partir des conventions : \code{spot_date},
+        \code{ois_maturity_date} (qui reproduit la logique de \code{MakeOIS}, règle de fin de mois
+        comprise), \code{build_ois_swap} (deux échéanciers puis deux jambes) et la factory
+        \code{ois_swap_factory} enregistrée sous la clé \code{ois_swap}.
+\end{itemize}
+
+Le coupon overnight est la pièce la plus délicate. Il applique l'équation \eqref{eq:seasoned} :
+boucle jour par jour sur la partie réalisée, télescopage sur la partie projetée
+(proposition~\ref{prop:telescope}).
+
+\begin{lstlisting}[caption={Facteur de capitalisation d'un coupon overnight (\code{cashflows.py}, docstrings omises).}]
+def compound_factor(self, env: MarketEnvironment) -> float:
+    valuation_date = env.valuation_date
+    curve = env.projection_curve(self.index.name)
+    if self.accrual_start > valuation_date:
+        # Entirely in the future: telescoped projection.
+        start_df, end_df = curve.discount_factors([self.accrual_start, self.accrual_end])
+        return float(start_df / end_df)
+
+    observation_dates = [d for d in self.index.fixing_calendar.business_days(
+        self.accrual_start, self.accrual_end) if d < self.accrual_end]
+    period_ends = [*observation_dates[1:], self.accrual_end]
+
+    factor, i, n = 1.0, 0, len(observation_dates)
+    # Realised part: fixings strictly before the valuation date are mandatory.
+    while i < n and observation_dates[i] < valuation_date:
+        factor *= self._realised_growth(env, observation_dates[i], period_ends[i])
+        i += 1
+    # Fixing of the valuation date itself: used if already known, projected otherwise.
+    if i < n and observation_dates[i] == valuation_date:
+        todays_fixing = env.fixing(self.index.name, valuation_date)
+        if todays_fixing is not None:
+            factor *= 1.0 + todays_fixing * self.index.day_count.year_fraction(
+                observation_dates[i], period_ends[i])
+            i += 1
+    # Projected part, telescoped on the projection curve.
+    if i < n:
+        start_df, end_df = curve.discount_factors([observation_dates[i], self.accrual_end])
+        factor *= float(start_df / end_df)
+    return factor
+\end{lstlisting}
+
+Un fixing passé manquant lève une \code{MarketDataError} qui précise l'indice et la date, et se
+traduit côté API par une erreur $422$ de code \code{MARKET_DATA_INVALID}.
+
+\subsection{Moteur de valorisation}
+
+\code{PricingEngine} est une interface ; \code{engine_for(type, method)} choisit l'implémentation
+dans le registre \code{ENGINES}. Les moteurs sont sans état. \code{DiscountingSwapEngine} implémente
+les formules \eqref{eq:vfix}--\eqref{eq:pv} :
+
+\begin{lstlisting}[caption={Fonctions de base du moteur (\code{engines/discounting.py}).}]
+def _alive_coupons(leg: Leg, env: MarketEnvironment) -> list[Coupon]:
+    # Coupons of the leg paid strictly after the valuation date.
+    return [cf for cf in leg.cashflows
+            if isinstance(cf, Coupon) and cf.payment_date > env.valuation_date]
+
+def par_rate(self, instrument: Instrument, env: MarketEnvironment) -> float:
+    swap = self._check(instrument)
+    annuity = _annuity(swap.fixed_leg, env)          # sum N * tau_i * P(pay_i)
+    if annuity == 0.0:
+        raise PricingError("par rate undefined: no remaining fixed coupon")
+    return _unsigned_leg_value(swap.overnight_leg, env) / annuity
+\end{lstlisting}
+
+La méthode \code{price} renvoie un \code{PricingResult}, \emph{jamais un simple flottant} : PV
+total, PV par jambe, tableau des flux (dates, fraction d'année, taux, montant signé, facteur
+d'actualisation, PV), taux de par, annuité, PVBP et diagnostics (moteur, durée, version du cœur,
+avertissements). Si aucun coupon fixe ne subsiste, le taux de par est indéfini : il vaut \code{NaN}
+dans le cœur, un avertissement est émis, et l'API renvoie \code{null}. La méthode \code{par_rate}
+est la version allégée, sans tableau de flux, réutilisée par le bootstrap.
+
+\subsection{Registres et erreurs}
+
+Six registres (\code{CALENDARS}, \code{DAY_COUNTS}, \code{INTERPOLATORS}, \code{INSTRUMENTS},
+\code{ENGINES}, \code{CONVENTIONS}) associent une clé stable à un composant. Leurs modules sont
+importés \emph{paresseusement} à la première consultation : un module de calendrier importe le
+registre pour s'y enregistrer, donc le registre ne peut pas importer les calendriers au chargement
+sans créer d'import circulaire. Le chargeur est commun à tous les registres et réentrant. Le
+catalogue de l'API (\code{/v1/catalog}) est généré à partir de ces registres.
+
+{\sloppy La hiérarchie d'erreurs \code{RatesPricerError} comporte une classe par mode d'échec
+(\code{ConventionError}, \code{ScheduleError}, \code{MarketDataError}, \code{CalibrationError},
+\code{UnsupportedInstrumentError}, \code{PricingError}, \code{RiskComputationError}). Chacune porte
+un message et des détails structurés, que l'API met en correspondance avec un code HTTP
+(tableau~\ref{tab:errors}).\par}
+
+% -----------------------------------------------------------------------------
+\section{Services, API, SDK et interface}\label{sec:services}
+
+\subsection{Couche services}
+
+\code{PricerService} est la façade appelée par l'API. Ses entrées sont des dataclasses figées
+(\code{SnapshotReference} ou \code{InlineMarket} pour le marché, \code{TradeInput},
+\code{CalculationOptions}) : Pydantic reste cantonné à \code{api} et \code{sdk} (ADR-021). Pour
+chaque calcul, le service :
+\begin{enumerate}
+  \item charge le snapshot, par référence (fichier) ou par valeur (corps de la requête) ;
+  \item calcule l'\emph{empreinte} du marché et consulte le cache de courbes ;
+  \item en cas d'absence, bootstrape la courbe et la met en cache ;
+  \item construit l'instrument avec la factory, le valorise avec le moteur ;
+  \item renvoie le résultat accompagné de diagnostics (durées par étape, \emph{hit} ou \emph{miss} du
+        cache, avertissements, empreintes) et émet un événement d'audit.
+\end{enumerate}
+
+\paragraph{Cache de courbes.} \code{LruCurveCache} est un cache en mémoire, \emph{least recently
+used}, à capacité configurable (32 par défaut) et à durée de vie optionnelle, protégé par un verrou
+(l'API sert plusieurs requêtes dans des threads). Il tient des compteurs (\emph{hits}, \emph{misses},
+évictions) et accepte une horloge injectable, ce qui permet de tester l'expiration sans attente. Il
+est \emph{par processus} : avec plusieurs \emph{workers}, chacun a son cache. Une interface
+\code{CurveCache} permettra de le remplacer par Redis (ADR-005).
+
+\paragraph{Clé du cache.} La clé est le SHA-256 de la sérialisation JSON canonique (clés triées)
+des données du snapshot (date, devise, cotations avec leurs unités, fixings), de l'interpolation,
+du solveur et de la version du cœur. Le \emph{nom} du snapshot en est exclu : les mêmes données
+passées par référence ou par valeur partagent la même entrée (ADR-026). Une même empreinte d'entrée et
+une même version doivent donner exactement le même résultat ; un PV différent révèle alors un bug.
+
+\subsection{API HTTP}
+
+L'API FastAPI expose, en phase~1, les routes du tableau~\ref{tab:routes}. Principes du contrat :
+
+\begin{table}[ht]
+\centering
+\caption{Routes de l'API en phase~1.}\label{tab:routes}
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{5.3cm}X@{}}
+\toprule
+Route & Rôle\\
+\midrule
+\code{GET /health} & Liveness : le processus répond.\\
+\code{GET /ready} & Readiness : conventions et registres chargés (503 sinon).\\
+\code{GET /v1/version} & Versions de l'API, du cœur, de Python et de NumPy ; commit déployé.\\
+\code{GET /v1/catalog} & Types d'instruments, interpolations, devises, schémas des trades, générés
+  depuis les registres.\\
+\code{GET /v1/market-snapshots} & Liste des snapshots ; le contenu d'un snapshot est sous
+  \code{/v1/market-snapshots/<nom>}.\\
+\code{POST /v1/curves/build} & Bootstrap : nœuds calibrés, grille de la courbe, diagnostics de
+  convergence.\\
+\code{POST /v1/price} & Valorisation d'un trade.\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{itemize}
+  \item \textbf{Sans état} : chaque requête porte ou référence ses données de marché et son trade.
+  \item \textbf{Versionnée par l'URL} (\code{/v1}) : un changement incompatible crée \code{/v2}.
+  \item \textbf{DTO distincts du domaine} : les schémas Pydantic (\code{api/schemas.py}) ne dépendent
+        que de Pydantic ; les champs inconnus sont refusés.
+  \item \textbf{Unités explicites} : dates ISO~8601, taux en décimal, cotations avec unité.
+  \item \textbf{Enveloppe permanente} : chaque réponse contient \code{request_id}, \code{result} et un
+        bloc \code{diagnostics}.
+\end{itemize}
+
+\begin{lstlisting}[language=json,caption={Requête \code{POST /v1/price} et réponse (abrégée).}]
+POST /v1/price
+{ "market":  { "snapshot": "EUR_2026-10-19" },
+  "trade":   { "type": "ois_swap",
+               "params": { "notional": 10000000, "fixed_rate": 0.0225,
+                           "direction": "pay_fixed", "maturity": "5Y" } },
+  "options": { "interpolation": "log_linear_df" } }
+
+200 OK
+{ "request_id": "smoke-1",
+  "result": { "instrument_type": "ois_swap", "currency": "EUR",
+              "present_value": 1902.5377349308692, "par_rate": 0.02254000000000001,
+              "annuity": 47563443.373254724, "legs": [ ... ], "cashflows": [ ... ] },
+  "diagnostics": { "curve_cache": "miss", "timings_ms": { "curve_build": 99.4, "pricing": 0.7 },
+                   "versions": { "api": "0.1.0", "core": "0.1.0" }, "warnings": [],
+                   "input_hashes": { "market": "8295394e...", "trade": "dc6b132c..." } } }
+\end{lstlisting}
+
+\paragraph{Gestion des erreurs.} Un format unique est utilisé partout,
+\code{{"request_id", "error": {"code", "message", "details"}}}, avec un code machine stable
+(tableau~\ref{tab:errors}). Une exception inattendue produit une réponse générique \code{INTERNAL_ERROR}
+sans trace ; la trace complète est journalisée avec le \code{request_id}.
+
+\begin{table}[ht]
+\centering
+\caption{Correspondance entre erreurs du cœur et réponses HTTP.}\label{tab:errors}
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}X c l@{}}
+\toprule
+Source & HTTP & Code\\
+\midrule
+Validation Pydantic (JSON mal formé, champ manquant ou inconnu) & 422 & \code{VALIDATION_ERROR}\\
+\code{MarketDataError} & 422 & \code{MARKET_DATA_INVALID}\\
+\code{ConventionError}, \code{ScheduleError} & 422 & \code{INVALID_TRADE_DEFINITION}\\
+\code{UnsupportedInstrumentError} & 400 & \code{UNSUPPORTED_INSTRUMENT}\\
+\code{CalibrationError} (pilier et résidu) & 422 & \code{CALIBRATION_FAILED}\\
+\code{MarketDataNotFoundError}, route inconnue & 404 & \code{NOT_FOUND}\\
+\code{PricingError}, \code{RiskComputationError} & 500 & \code{COMPUTATION_FAILED}\\
+Exception inattendue & 500 & \code{INTERNAL_ERROR}\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\paragraph{Corrélation par \code{request_id}.} Un middleware ASGI « pur » lit l'en-tête
+\code{X-Request-ID} (s'il est bien formé, 1 à 128 caractères sûrs) ou en génère un, le lie à une
+\code{ContextVar} et le renvoie dans la réponse. Un filtre de logging l'injecte dans \emph{chaque}
+enregistrement, y compris ceux émis par le cœur, qui ignore tout de cette mécanique. Les routes de
+calcul sont des fonctions synchrones : FastAPI les exécute dans un \emph{thread}, ce qui évite de
+bloquer la boucle d'événements pendant le bootstrap et propage le contexte au thread (ADR-025).
+
+\subsection{Journalisation}
+
+Trois niveaux, au format JSON, un événement par ligne, avec des champs stables : les \emph{logs
+techniques} (accès, cache), les \emph{logs de calcul} (par pilier en niveau \code{DEBUG}, synthèse du
+bootstrap, PV par jambe) et le \emph{log d'audit} \code{calculation_audit}, qui contient les
+empreintes des entrées, les versions et les options, et permet de rejouer le calcul.
+
+\begin{lstlisting}[language=json,caption={Événement de calcul (champs tronqués).}]
+{"timestamp": "2026-10-25T00:39:49.930+00:00", "level": "INFO",
+ "logger": "core.engines.discounting", "event": "pricing_completed",
+ "request_id": "smoke-1", "trade_type": "ois_swap", "currency": "EUR",
+ "present_value": 1902.5377349308692, "cashflow_count": 10,
+ "par_rate": 0.02254000000000001, "duration_ms": 0.567}
+\end{lstlisting}
+
+\subsection{SDK et tableau de bord}
+
+Le \code{PricerClient} (basé sur \code{httpx}) expose \code{price}, \code{build_curves},
+\code{catalog}, \code{list_snapshots}, \code{get_snapshot}, \code{health}, \code{ready} et
+\code{version}, et renvoie des objets typés qui réutilisent les schémas de l'API. Chaque code d'erreur
+devient une exception typée portant le \code{request_id}, à communiquer au support ; une API
+injoignable lève \code{ApiUnavailableError}.
+
+\begin{lstlisting}[caption={Utilisation du SDK.}]
+from rate_derivatives_pricer.sdk import PricerClient, ois_swap
+
+with PricerClient("http://localhost:8000") as client:
+    priced = client.price("EUR_2026-10-19", ois_swap(10_000_000, 0.0225, "pay_fixed", "5Y"))
+    print(priced.result.present_value, priced.result.par_rate, priced.request_id)
+\end{lstlisting}
+
+Le tableau de bord Streamlit offre deux onglets : la courbe (zéros, forwards, facteurs
+d'actualisation, table de calibration) et un formulaire de pricing d'OIS (PV, taux de par,
+annuité, PVBP, flux). Il \emph{ne calcule rien} : tout passe par le SDK. Le SDK sert ainsi de test
+d'intégration vivant, puisqu'une rupture du contrat HTTP casse immédiatement le tableau de bord.
+Le contrat \code{import-linter} (3) interdit à \code{ui} d'importer \code{api} directement ;
+le SDK réexporte les schémas de l'API (\code{sdk/models.py}), ce qui rend l'import indirect
+\code{ui}~$\to$~\code{sdk}~$\to$~\code{api.schemas} légitime (ADR-021).
+
+% -----------------------------------------------------------------------------
+\section{Validation et qualité}\label{sec:validation}
+
+\subsection{QuantLib comme oracle}
+
+QuantLib (version~1.44) n'est utilisée que comme \emph{oracle de test} : dépendance de développement
+uniquement, jamais importée par le cœur (ADR-003). Le module \code{quantlib_oracle.py} traduit nos
+conventions en objets QuantLib (\code{DepositRateHelper}, \code{OISRateHelper},
+\code{PiecewiseLogLinearDiscount}, \code{MakeOIS}). Comme QuantLib possède une date d'évaluation
+\emph{globale}, un gestionnaire de contexte la positionne sur la date du snapshot puis restaure la
+valeur précédente.
+
+Les cas sont \emph{générés à partir de grilles}, non écrits à la main :
+\begin{itemize}
+  \item \textbf{Marchés} : 3 dates de valorisation (dont une fin de mois et la veille de Pâques)
+        $\times$ 3 chocs parallèles ($-250$, $0$, $+150$ points de base), soit 9 marchés ;
+  \item \textbf{Swaps spot} : 13 maturités (1W à 30Y) $\times$ 2 sens $\times$ 2 notionnels
+        $\times$ 3 taux fixes $\times$ 9 marchés, soit 1\,404 swaps, plus des swaps déjà commencés
+        et à départ différé ;
+  \item \textbf{Calendrier} : jours ouvrés TARGET de 1995 à 2060 comparés jour par jour ;
+        échéanciers : fréquences $\times$ règles $\times$ fin de mois $\times$ deux ans de dates de
+        départ.
+\end{itemize}
+
+\subsection{Tolérances et résultats}
+
+Les tolérances sont des constantes nommées d'un seul module de test
+(module \code{tolerances.py} du dossier de validation) ; les écarts réellement constatés sont consignés dans le
+journal des décisions (ADR-024).
+
+\begin{table}[ht]
+\centering
+\caption{Écarts maximaux avec QuantLib (9 marchés, 1\,404 swaps spot).}\label{tab:validation}
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}p{3.2cm} r@{}}
+\toprule
+Grandeur & Critère & Écart mesuré\\
+\midrule
+Calendriers, décomptes, échéanciers & égalité exacte & exacte\\
+Facteurs d'actualisation, log-linéaire & $<10^{-10}$ & $2{,}5\times10^{-13}$\\
+Facteurs d'actualisation, linéaire sur zéro & $<10^{-10}$ & $2{,}3\times10^{-11}$\\
+PV rapportée au notionnel & $<10^{-8}$ & $2{,}3\times10^{-13}$\\
+Taux de par (relatif) & $<10^{-8}$ & $9{,}9\times10^{-11}$\\
+Annuité (relatif) & $<10^{-8}$ & $5{,}6\times10^{-14}$\\
+PV au taux de par (propriété) & $\le10^{-10}\times N$ & respecté\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+La PV est comparée \emph{relativement au notionnel} : un swap proche du par a une PV proche de zéro,
+différence de deux jambes de plusieurs millions, pour laquelle un écart relatif à la PV n'a pas de
+sens. La figure~\ref{fig:gap} montre l'écart sur les facteurs d'actualisation le long de la courbe de
+référence, entre les piliers et au-delà du dernier.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  width=0.88\linewidth, height=6.4cm, ymode=log, xmin=0, xmax=40, ymin=1e-17, ymax=1e-9,
+  xlabel={Maturité (années)}, ylabel={$\lvert P_{\mathrm{pricer}}-P_{\mathrm{QuantLib}}\rvert$},
+  legend pos=north west, legend columns=1,
+]
+\addplot[blue!70!black, thick, only marks, mark=*, mark size=0.8pt] table[x=t, y=loglinear]{data/quantlib_gap.dat};
+\addlegendentry{Log-linéaire sur DF (défaut)}
+\addplot[orange!85!black, thick, only marks, mark=square*, mark size=0.8pt] table[x=t, y=linearzero]{data/quantlib_gap.dat};
+\addlegendentry{Linéaire sur zéro}
+\addplot[red!70!black, dashed, thick] coordinates {(0,1e-10) (40,1e-10)};
+\addlegendentry{Critère $10^{-10}$}
+\end{axis}
+\end{tikzpicture}
+\caption{Écart absolu sur les facteurs d'actualisation, $0$ à $40$ ans, snapshot de référence. Les écarts
+nuls sont tracés au plancher de l'échelle ($10^{-17}$). Maximum : \MaxGapLogLinear{} (log-linéaire) et
+\MaxGapLinearZero{} (linéaire sur zéro).}\label{fig:gap}
+\end{figure}
+
+\subsection{Pyramide de tests}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X@{}}
+\toprule
+Niveau & Contenu\\
+\midrule
+Unitaires & Calendriers, décomptes, échéanciers, interpolateurs, solveurs, coupons, registres, cache,
+mappers ; cas limites et erreurs.\\
+Propriétés (\code{hypothesis}) & Sur des centaines d'entrées aléatoires : $\DF{t_0}=1$, facteurs
+décroissants, cohérence forward/DF, \textbf{PV nulle au taux de par}, symétrie payeur/receveur,
+résidus de bootstrap sous chocs.\\
+Validation QuantLib & Comparaison systématique sur les grilles ci-dessus (75 tests).\\
+API / SDK / UI & Contrat HTTP, erreurs, \code{request_id} jusque dans les logs du cœur, cache, SDK typé,
+tableau de bord exécuté pour de bon (\code{AppTest}).\\
+Intégration & SDK~$\to$~HTTP~$\to$~cœur donne \emph{exactement} les mêmes nombres que le cœur appelé
+directement ; \emph{golden file} de non-régression.\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Au total, \textbf{265 tests}, avec une couverture de \textbf{99\,\%} pour \code{core/} (96\,\% pour
+l'ensemble du paquet). Le \emph{golden file} fige la PV, le taux de par et l'annuité de cinq trades
+d'exemple ainsi que les facteurs d'actualisation de chaque pilier.
+
+\subsection{Chaîne de qualité}
+
+Avant chaque commit, un hook \code{pre-commit} exécute \code{ruff} (style, docstrings Google,
+interdiction de \code{print}), \code{mypy} (mode strict sur \code{core} et \code{services}),
+\code{import-linter} et les tests unitaires. La CI GitHub Actions rejoue la même boucle sur une machine
+Linux vierge, puis l'ensemble des tests avec mesure de couverture ; la protection de branche exige
+qu'elle soit verte avant toute fusion.
+
+\subsection{Incidents rencontrés}
+
+Quatre incidents, instructifs sur la méthode, sont consignés :
+\begin{enumerate}
+  \item \textbf{Règle de fin de mois.} La première version du générateur déplaçait aussi la date de
+        départ ; QuantLib ne le fait pas. \emph{Les détails de convention se vérifient date par date
+        contre un oracle, ils ne se devinent pas.}
+  \item \textbf{Extrapolation du schéma linéaire sur le zéro.} Linéaire dans la première version, à
+        forward constant chez QuantLib ; l'écart n'apparaissait qu'au-delà de 30 ans. \emph{Il faut
+        aussi tester hors des piliers.}
+  \item \textbf{Contrat \code{import-linter} trop large.} Celui de la phase~0 interdisait à \code{ui}
+        d'importer \code{api}, même indirectement, ce qui empêchait le SDK de réutiliser les schémas de
+        l'API. Il a été scindé en deux contrats plus précis et la décision est documentée
+        (ADR-021).
+  \item \textbf{Golden file sous Linux.} Sur la CI, la PV du swap receveur à 30~ans
+        ($-1\,034{,}69\eur$, différence de deux jambes d'environ $2{,}7$ millions) s'écartait de
+        $2\times10^{-9}\eur$ de la valeur calculée sous Windows, à cause des arrondis d'\code{exp} et
+        \code{log} propres à chaque plate-forme : $2{,}2\times10^{-12}$ en relatif à la PV, au-dessus de
+        la tolérance relative de $10^{-12}$. Les PV du golden file sont désormais comparées par unité
+        de notionnel.
+\end{enumerate}
+
+% -----------------------------------------------------------------------------
+\section{Journal des décisions}
+
+Les décisions non triviales sont consignées sous forme d'ADR (\emph{Architecture Decision Records}) dans
+\code{docs/DECISIONS.md}, dans la même PR que le code concerné. Celles de la phase~1 :
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X@{}}
+\toprule
+ADR & Décision\\
+\midrule
+019 & Conventions EUR \estr{} : TARGET, spot lag 2, flux annuels Act/360, Modified Following, fin de
+      mois, payment lag 1, sans lookback ; dépôt overnight ; deux variantes 30/360.\\
+020 & Fixings : obligatoires avant $t_0$, fixing du jour utilisé s'il est fourni, télescopage de la
+      partie projetée, flux échus exclus.\\
+021 & Frontières entre couches : schémas partagés API/SDK, entrées du service en dataclasses, contrat
+      \code{ui} scindé.\\
+022 & Bootstrap : pilier d'un OIS = dernière date de paiement, passe unique, encadrement
+      $[-50\,\%,+100\,\%]$, Brent par défaut, extrapolation à forward constant.\\
+023 & Données de marché synthétiques.\\
+024 & Validation QuantLib : tolérances inchangées, écarts mesurés, PV comparée au notionnel.\\
+025 & Contrat HTTP : enveloppe, empreintes, identifiant de requête, erreurs inattendues, variables
+      d'environnement, routes synchrones en threads.\\
+026 & Clé du cache : SHA-256 des données, de l'interpolation, du solveur et de la version ; nom exclu.\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+% -----------------------------------------------------------------------------
+\section{Limites et suite}\label{sec:limites}
+
+\paragraph{Limites assumées de la phase~1.}
+\begin{itemize}
+  \item \textbf{Courbe unique.} L'actualisation et la projection partagent la courbe \estr{}. Un swap
+        contre Euribor exige une courbe de projection distincte~\cite{ametrano2013,andersen2010}
+        (phase~2).
+  \item \textbf{Capitalisation simple.} Ni \emph{lookback}, ni \emph{lockout}, ni \emph{observation shift}.
+  \item \textbf{Décalage de paiement sans ajustement de convexité} : le coupon est évalué sur la courbe
+        puis actualisé à sa date de paiement ; l'écart est cohérent avec le moteur d'actualisation de
+        QuantLib, sur lequel la validation s'appuie.
+  \item \textbf{Une seule devise} (EUR) ; l'USD (SOFR, calendrier US) s'ajoutera par configuration.
+  \item \textbf{Données synthétiques} : le snapshot peut être remplacé par des cotations réelles sans
+        changement de code.
+  \item \textbf{Pas de risque} : seuls le PVBP et l'annuité sont fournis.
+\end{itemize}
+
+\paragraph{Prochaines étapes.} La phase~2 introduit l'\code{IborIndex} (Euribor 3M/6M), le bootstrap
+multi-courbes (actualisation OIS, projection Euribor), le swap vanille (IRS) et le risque par
+\emph{bump-and-reprice} sur les instruments de calibration : DV01 parallèle, DV01 par bucket
+(\emph{key-rate}), convexité et DV01 par courbe. L'architecture a été conçue pour cela : le risque
+dépendra d'une fonction de valorisation abstraite, de sorte qu'ajouter une mesure ne demandera
+aucune modification des moteurs.
+
+% =============================================================================
+\appendix
+\section{Calibration détaillée de la courbe}\label{app:pillars}
+
+\begin{table}[H]
+\centering
+\caption{Piliers calibrés sur le snapshot synthétique du \ValuationDate{} : cotation, facteur
+d'actualisation, taux zéro continu, itérations de Brent et résidu final (taux décimal).}
+\setlength{\tabcolsep}{4pt}
+\small
+\input{generated/table_pillars.tex}
+\end{table}
+
+\section{Carte des modules}\label{app:modules}
+
+Chemins relatifs à \code{src/rate_derivatives_pricer/}.
+
+\begingroup
+\small
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{6.5cm}>{\raggedright\arraybackslash}p{8.9cm}@{}}
+\toprule
+Module & Rôle\\
+\midrule
+\endhead
+\code{core/errors.py} & Hiérarchie d'exceptions typées.\\
+\code{core/registry/} & Registre générique et six registres concrets, chargement paresseux.\\
+\code{core/conventions/business_day.py} & Conventions de jour ouvré.\\
+\code{core/conventions/tenor.py} & \code{Tenor}, \code{Frequency}, arithmétique de dates.\\
+\code{core/conventions/calendar.py} & Calendriers TARGET, week-ends, nul, joint ; fin de mois.\\
+\code{core/conventions/day_count.py} & Act/360, Act/365F, 30/360, 30E/360.\\
+\code{core/conventions/currency.py} \newline \code{core/conventions/data/EUR.json} &
+  Conventions d'une devise, chargées depuis la configuration.\\
+\code{core/schedule/generator.py} & Génération d'échéanciers (accrual, paiement, stub).\\
+\code{core/market/indices.py} & Description d'un indice overnight.\\
+\code{core/market/quotes.py} & Cotations avec unité explicite.\\
+\code{core/market/snapshot.py} & Snapshot immuable : date, cotations, fixings.\\
+\code{core/market/providers.py} & Fournisseur de fichiers, format canonique.\\
+\code{core/market/interpolation.py} & Interpolations log-linéaire sur DF et linéaire sur zéro.\\
+\code{core/market/solvers.py} & Solveurs de Brent et de Newton.\\
+\code{core/market/curves.py} & Courbe d'actualisation (DF, zéro, forward).\\
+\code{core/market/environment.py} & Environnement de marché, rapports de calibration.\\
+\code{core/market/calibration.py} & Instruments de calibration (dépôt, OIS).\\
+\code{core/market/bootstrap.py} & \code{CurveBuilder} : bootstrap séquentiel.\\
+\code{core/instruments/cashflows.py} & Flux polymorphes : coupon fixe, coupon overnight composé.\\
+\code{core/instruments/legs.py} & Jambe : flux, notionnel, sens.\\
+\code{core/instruments/swaps.py} & \code{OisSwap}, \code{SwapDirection}.\\
+\code{core/instruments/factories.py} & Dates spot et maturité, construction du swap, factory.\\
+\code{core/engines/base.py} & Interface de moteur, sélection par registre.\\
+\code{core/engines/discounting.py} & Moteur d'actualisation d'un swap.\\
+\code{core/engines/results.py} & \code{PricingResult} et sous-résultats.\\
+\code{services/requests.py} & Entrées du service (dataclasses figées).\\
+\code{services/mappers.py} & Traductions, empreintes, charges utiles JSON.\\
+\code{services/curve_cache.py} & Cache LRU de courbes, protocole \code{CurveCache}.\\
+\code{services/pricer_service.py} & Façade : calculs, métadonnées, diagnostics, audit.\\
+\code{api/settings.py} & Configuration par variables d'environnement.\\
+\code{api/schemas.py} & Contrat HTTP (Pydantic).\\
+\code{api/errors.py} & Traduction des erreurs en réponses structurées.\\
+\code{api/middleware.py} & \code{request_id}, journal d'accès, erreurs inattendues.\\
+\code{api/routes.py} & Routes de la version~1.\\
+\code{api/main.py} & Fabrique de l'application.\\
+\code{api/logging_config.py} & Logging JSON et \code{request_id} (phase~0).\\
+\code{sdk/client.py}, \code{sdk/models.py} & Client typé et modèles réexportés.\\
+\code{ui/views.py}, \code{ui/app.py} & Présentation (figures, tables) et script Streamlit.\\
+\bottomrule
+\end{longtable}
+\endgroup
+
+\section{Reproduire les chiffres et compiler}
+
+Le script \code{docs/latex/generate_data.py} appelle le pricer et écrit, à côté de ce document, les
+données des figures (\code{data/*.dat}), les tableaux (\code{generated/table_*.tex}) et les macros des
+exemples chiffrés (\code{generated/numbers.tex}). Pour régénérer puis compiler :
+
+\begin{lstlisting}[language={},caption={Régénération des données et compilation.}]
+uv run python docs/latex/generate_data.py
+cd docs/latex
+pdflatex pricing_ois.tex
+pdflatex pricing_ois.tex      # second passage : table des matieres et references
+\end{lstlisting}
+
+% =============================================================================
+\begin{thebibliography}{9}
+
+\bibitem{andersen2010}
+L.~B.~G.~Andersen et V.~V.~Piterbarg, \emph{Interest Rate Modeling}, vol.~1, Atlantic Financial Press, 2010.
+
+\bibitem{ametrano2013}
+F.~M.~Ametrano et M.~Bianchetti, \emph{Everything You Always Wanted to Know About Multiple Interest
+Rate Curve Bootstrapping but Were Afraid to Ask}, SSRN, 2013.
+
+\bibitem{brent1973}
+R.~P.~Brent, \emph{Algorithms for Minimization without Derivatives}, Prentice-Hall, 1973 (chapitre~4).
+
+\bibitem{hagan2006}
+P.~S.~Hagan et G.~West, \emph{Interpolation Methods for Curve Construction}, Applied Mathematical
+Finance, 13(2), 2006.
+
+\bibitem{henrard2014}
+M.~Henrard, \emph{Interest Rate Modelling in the Multi-Curve Framework}, Palgrave Macmillan, 2014.
+
+\bibitem{isda2006}
+ISDA, \emph{2006 ISDA Definitions}, section~4.16 (conventions de décompte) et section~4.12
+(conventions de jour ouvré).
+
+\bibitem{piterbarg2010}
+V.~V.~Piterbarg, \emph{Funding Beyond Discounting: Collateral Agreements and Derivatives Pricing},
+Risk, février 2010.
+
+\end{thebibliography}
+
+\end{document}
