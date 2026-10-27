@@ -112,7 +112,10 @@ Une phase = une branche = une PR. La CI doit passer avant la fusion ;
 - Tranche verticale : `/v1/risk`, SDK (`vanilla_irs`, `risk`) et dashboard (onglets Marché, Trade, Risque) ; test
   d'intégration SDK -> HTTP -> cœur identique au bit près, et *golden file* de la phase 2.
 
-## Phase 3 : risque avancé
+## Phase 3 : risque avancé — TERMINÉE
+
+> Fusionnée dans `main` (PR #9, branche `phase-3-advanced-risk`). CI verte sur la PR. Prochaine phase : la phase 4.
+> Conventions et hypothèses validées avant implémentation ; décisions de la phase : ADR-032 à ADR-036.
 
 **Livrables**
 - `Scenario`, `ScenarioPnL` (parallèle ±, steepener, flattener, twist), `/v1/risk/scenarios`.
@@ -125,6 +128,22 @@ Une phase = une branche = une PR. La CI doit passer avant la fusion ;
 - Un swap USD SOFR validé vs QuantLib avec les mêmes tolérances que l'EUR.
 - PV scénario − PV base cohérent avec DV01 et convexité (vérification de Taylor sur petits chocs).
 - Hypothèse carry/roll-down documentée et testée sur un cas simple calculable à la main.
+
+**Bilan de vérification** (en local sous Windows et sur la CI GitHub sous Linux)
+- Boucle `ruff check`, `ruff format --check`, `mypy` (strict sur `core/` et `services/`), `lint-imports` (5 contrats) et
+  `pytest` : **533 tests verts** (dont 192 de validation QuantLib), couverture totale **95 %**.
+- USD par configuration : `USD.json` et deux calendriers enregistrés (`US_GOVERNMENT_BOND`, `US_SOFR`) ; aucune ligne
+  du bootstrap, des coupons, des moteurs ni du risque modifiée (ADR-032).
+- USD vs QuantLib, mêmes tolérances que l'EUR : calendriers US à **égalité exacte** (1995-2060) ; courbe SOFR, écart DF
+  max **2,4e-13** (`log_linear_df`) et 1,9e-12 (`linear_zero`) ; 1 404 swaps OIS SOFR : PV/notionnel **2,6e-13**,
+  par rate 3,0e-11, annuité 1,0e-13 (critère : 1e-8) (ADR-036).
+- Taylor : P&L de scénario contre `DV01 dx + convexité dx² / 2` pour des chocs parallèles de 1 à 5 bp, à **3,3e-5**
+  près au pire (30 ans, 5 bp ; tolérance `TAYLOR_REL = 1e-4`).
+- Carry/roll-down (hypothèse de courbe inchangée, ADR-034) : testé sur une courbe plate à 2 %, payeur 1 an à 3 %,
+  horizon 3M, calculable à la main.
+- Tranche verticale : `/v1/risk/scenarios`, `/v1/risk/carry`, SDK (`scenarios`, `carry_rolldown`, `scenario`) et
+  dashboard (onglets Scénarios, Carry, Comparaison) ; test d'intégration SDK -> HTTP -> cœur identique au bit près, et
+  *golden file* de la phase 3.
 
 ## Phase 4 : industrialisation et dashboard complet
 
