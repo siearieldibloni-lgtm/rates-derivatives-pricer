@@ -19,6 +19,8 @@ from rate_derivatives_pricer.api.schemas import (
     SNAPSHOT_NAME_PATTERN,
     TRADE_PARAMS_SCHEMAS,
     CalculationOptionsModel,
+    CarryRequest,
+    CarryResult,
     CatalogResult,
     CurvesBuildRequest,
     CurvesBuildResult,
@@ -32,6 +34,8 @@ from rate_derivatives_pricer.api.schemas import (
     PriceResult,
     RiskRequest,
     RiskResult,
+    ScenariosRequest,
+    ScenariosResult,
     SnapshotListResult,
     SnapshotResult,
     TradeModel,
@@ -43,9 +47,11 @@ from rate_derivatives_pricer.services.pricer_service import Diagnostics as Servi
 from rate_derivatives_pricer.services.pricer_service import PricerService
 from rate_derivatives_pricer.services.requests import (
     CalculationOptions,
+    CarryOptions,
     InlineMarket,
     MarketInput,
     RiskOptions,
+    ScenarioOptions,
     SnapshotReference,
     TradeInput,
 )
@@ -265,5 +271,55 @@ def risk(body: RiskRequest, service: ServiceDependency) -> Envelope[RiskResult]:
     return Envelope[RiskResult](
         request_id=get_request_id(),
         result=RiskResult.model_validate(outcome.result),
+        diagnostics=_diagnostics(service, outcome.diagnostics),
+    )
+
+
+@router.post(
+    "/v1/risk/scenarios",
+    response_model=Envelope[ScenariosResult],
+    responses=ERROR_RESPONSES,
+    tags=["calculations"],
+)
+def scenarios(body: ScenariosRequest, service: ServiceDependency) -> Envelope[ScenariosResult]:
+    """Full revaluation under named scenarios: parallel, steepener, flattener, twist, custom."""
+    trade = _trade_input(body.trade)
+    outcome = service.scenarios(
+        _market_input(body.market),
+        trade,
+        ScenarioOptions(
+            names=tuple(body.scenarios),
+            custom=tuple(
+                scenario.model_dump(mode="json", exclude_none=True)
+                for scenario in body.custom_scenarios
+            ),
+        ),
+        _options(body.options),
+    )
+    return Envelope[ScenariosResult](
+        request_id=get_request_id(),
+        result=ScenariosResult.model_validate(outcome.result),
+        diagnostics=_diagnostics(service, outcome.diagnostics),
+    )
+
+
+@router.post(
+    "/v1/risk/carry",
+    response_model=Envelope[CarryResult],
+    responses=ERROR_RESPONSES,
+    tags=["calculations"],
+)
+def carry(body: CarryRequest, service: ServiceDependency) -> Envelope[CarryResult]:
+    """Carry and roll-down over a horizon, under the unchanged curve hypothesis."""
+    trade = _trade_input(body.trade)
+    outcome = service.carry_rolldown(
+        _market_input(body.market),
+        trade,
+        CarryOptions(horizon=body.horizon),
+        _options(body.options),
+    )
+    return Envelope[CarryResult](
+        request_id=get_request_id(),
+        result=CarryResult.model_validate(outcome.result),
         diagnostics=_diagnostics(service, outcome.diagnostics),
     )

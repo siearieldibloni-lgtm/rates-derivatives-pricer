@@ -14,10 +14,12 @@ from plotly.subplots import make_subplots
 
 from rate_derivatives_pricer.sdk.client import PricerClient
 from rate_derivatives_pricer.sdk.models import (
+    CarryResult,
     CurveResult,
     PriceResult,
     RiskMeasureResult,
     RiskResult,
+    ScenariosResult,
 )
 
 API_URL_ENVIRONMENT_VARIABLE = "PRICER_API_URL"
@@ -189,3 +191,156 @@ def risk_summary(result: RiskResult) -> dict[str, str]:
     for measure in result.measures:
         summary[measure.measure] = f"{measure.value:,.4f} {measure.unit}"
     return summary
+
+
+# --------------------------------------------------------------------------- phase 3
+def scenario_rows(result: ScenariosResult) -> list[dict[str, Any]]:
+    """Scenario table: PV and P&L under each scenario."""
+    return [
+        {
+            "scenario": entry.name,
+            "description": entry.description,
+            "curves": ", ".join(entry.curves) if entry.curves else "all",
+            "present value": entry.present_value,
+            "P&L": entry.pnl,
+        }
+        for entry in result.scenarios
+    ]
+
+
+def scenario_pnl_figure(result: ScenariosResult) -> go.Figure:
+    """Bar chart of the P&L of each scenario (trade currency)."""
+    figure = go.Figure(
+        go.Bar(
+            x=[entry.name for entry in result.scenarios],
+            y=[entry.pnl for entry in result.scenarios],
+            marker_color=[
+                "seagreen" if entry.pnl >= 0.0 else "indianred" for entry in result.scenarios
+            ],
+        )
+    )
+    figure.update_layout(
+        height=380,
+        margin={"t": 30, "b": 20},
+        yaxis={"title": f"P&L ({result.currency})"},
+    )
+    return figure
+
+
+def scenario_shift_matrix(result: ScenariosResult) -> go.Figure:
+    """Heatmap of the par-rate shifts (bp): one row per scenario, one column per tenor.
+
+    Columns are the tenors of the overnight (OIS) curve quotes, short to long; a scenario that
+    skips the OIS curve shows its shifts on the first curve it shocks.
+    """
+    columns: list[str] = []
+    rows: list[list[float]] = []
+    for entry in result.scenarios:
+        curves = list(dict.fromkeys(shift.curve for shift in entry.shifts))
+        shocked = [c for c in curves if any(s.shift_bp for s in entry.shifts if s.curve == c)]
+        curve = "OIS" if "OIS" in shocked or not shocked else shocked[0]
+        by_label = {s.label: s.shift_bp for s in entry.shifts if s.curve == curve}
+        if not columns:
+            columns = [s.label for s in entry.shifts if s.curve == "OIS"] or list(by_label)
+        rows.append([by_label.get(label, 0.0) for label in columns])
+    figure = go.Figure(
+        go.Heatmap(
+            z=rows,
+            x=columns,
+            y=[entry.name for entry in result.scenarios],
+            colorscale="RdBu",
+            reversescale=True,
+            zmid=0.0,
+            colorbar={"title": "bp"},
+        )
+    )
+    figure.update_layout(height=320, margin={"t": 30, "b": 20}, xaxis={"title": "Tenor"})
+    return figure
+
+
+def carry_summary(result: CarryResult) -> dict[str, str]:
+    """Headline figures of a carry/roll-down, formatted for display."""
+    unit = result.currency
+    return {
+        "Horizon": f"{result.horizon} ({result.horizon_date.isoformat()})",
+        "Carry": f"{result.carry:,.2f} {unit}",
+        "Roll-down": f"{result.rolldown:,.2f} {unit}",
+        "Total": f"{result.total:,.2f} {unit}",
+        "PV today": f"{result.present_value:,.2f} {unit}",
+        "PV at horizon": f"{result.horizon_present_value:,.2f} {unit}",
+        "Cashflows paid": f"{result.cashflows:,.2f} {unit}",
+    }
+
+
+def carry_figure(result: CarryResult) -> go.Figure:
+    """Waterfall: carry plus roll-down give the total P&L over the horizon."""
+    figure = go.Figure(
+        go.Waterfall(
+            x=["Carry", "Roll-down", "Total"],
+            y=[result.carry, result.rolldown, result.total],
+            measure=["relative", "relative", "total"],
+        )
+    )
+    figure.update_layout(
+        height=380, margin={"t": 30, "b": 20}, yaxis={"title": f"P&L ({result.currency})"}
+    )
+    return figure
+
+
+def snapshot_comparison_rows(
+    base: PriceResult, other: PriceResult, base_name: str, other_name: str
+) -> list[dict[str, Any]]:
+    """Same trade on two markets: PV, par rate and PV per leg side by side, with the change."""
+
+    def figures(result: PriceResult) -> dict[str, float]:
+        values = {"PV": result.present_value, "PVBP": result.pvbp}
+        if result.par_rate is not None:
+            values["par rate (%)"] = result.par_rate * PERCENT
+        values.update({f"PV {leg.name}": leg.present_value for leg in result.legs})
+        return values
+
+    base_values, other_values = figures(base), figures(other)
+    return [
+        {
+            "figure": name,
+            base_name: base_values[name],
+            other_name: other_values[name],
+            "change": other_values[name] - base_values[name],
+        }
+        for name in base_values
+        if name in other_values
+    ]
+
+
+def curve_change_figure(
+    base: list[CurveResult], other: list[CurveResult], base_name: str, other_name: str
+) -> go.Figure:
+    """Change of the calibrated par quotes (bp) between two snapshots, one series per curve."""
+    figure = go.Figure()
+    other_by_name = {curve.curve_name: curve for curve in other}
+    for curve in base:
+        counterpart = other_by_name.get(curve.curve_name)
+        if counterpart is None:
+            continue
+        quotes = {node.label: node.market_quote for node in counterpart.nodes}
+        labels = [node.label for node in curve.nodes if node.label in quotes]
+        figure.add_trace(
+            go.Scatter(
+                x=labels,
+                y=[
+                    (quotes[node.label] - node.market_quote) * BASIS_POINTS
+                    for node in curve.nodes
+                    if node.label in quotes
+                ],
+                mode="lines+markers",
+                name=curve.curve_name,
+            )
+        )
+    figure.update_layout(
+        height=380,
+        margin={"t": 30, "b": 20},
+        legend={"orientation": "h"},
+        xaxis={"title": "Calibration instrument"},
+        yaxis={"title": f"{other_name} - {base_name} (bp)"},
+    )
+    return figure

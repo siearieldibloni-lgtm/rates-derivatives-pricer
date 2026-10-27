@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from collections.abc import Mapping
 from dataclasses import asdict
 from datetime import date
 from typing import Any
@@ -20,7 +21,13 @@ from rate_derivatives_pricer.core.market.providers import (
     snapshot_to_dict,
 )
 from rate_derivatives_pricer.core.market.snapshot import MarketSnapshot
-from rate_derivatives_pricer.core.risk import RiskReport
+from rate_derivatives_pricer.core.risk import (
+    CarryRolldownResult,
+    RiskReport,
+    Scenario,
+    ScenarioReport,
+    scenario_from_dict,
+)
 from rate_derivatives_pricer.services.requests import (
     INLINE_SNAPSHOT_NAME,
     CalculationOptions,
@@ -35,6 +42,8 @@ CURVE_GRID_STEP = Tenor(1, TimeUnit.MONTHS)
 # Forward rates of the curve grid: simply compounded, one month, Act/360 (money-market style).
 CURVE_GRID_FORWARD_TENOR = Tenor(1, TimeUnit.MONTHS)
 CURVE_GRID_FORWARD_DAY_COUNT = Act360()
+# Carry/roll-down hypothesis reported with every result (ADR-034).
+CARRY_HYPOTHESIS = "unchanged_curve"
 
 
 def snapshot_from_input(
@@ -219,3 +228,69 @@ def risk_payload(report: RiskReport, currency: str, valuation_date: date) -> dic
 def snapshot_payload(snapshot: MarketSnapshot) -> dict[str, Any]:
     """Content of a stored snapshot (canonical dictionary)."""
     return snapshot_to_dict(snapshot)
+
+
+def scenario_input(raw: Mapping[str, Any]) -> Scenario:
+    """Custom scenario of a request (``{"name", "points": [{"tenor", "shift_bp"}], ...}``).
+
+    Raises:
+        UnsupportedScenarioError: If the definition is invalid.
+    """
+    return scenario_from_dict(raw)
+
+
+def scenarios_payload(
+    report: ScenarioReport, currency: str, valuation_date: date
+) -> dict[str, Any]:
+    """Result of ``/v1/risk/scenarios``: base PV and one entry per scenario."""
+    return {
+        "instrument_type": report.instrument_type,
+        "currency": currency,
+        "valuation_date": valuation_date.isoformat(),
+        "present_value": report.base_pv,
+        "scenarios": [
+            {
+                "name": result.scenario.name,
+                "description": result.scenario.description,
+                "curves": sorted(result.scenario.curves) if result.scenario.curves else None,
+                "points": [
+                    {"tenor": point.tenor_label, "shift_bp": point.shift_bp}
+                    for point in result.scenario.points
+                ],
+                "present_value": result.present_value,
+                "pnl": result.pnl,
+                "shifts": [asdict(shift) for shift in result.shifts],
+            }
+            for result in report.results
+        ],
+    }
+
+
+def scenario_catalog_entry(scenario: Scenario) -> dict[str, Any]:
+    """Preset scenario as published by ``/v1/catalog``."""
+    return {
+        "name": scenario.name,
+        "description": scenario.description,
+        "points": [
+            {"tenor": point.tenor_label, "shift_bp": point.shift_bp} for point in scenario.points
+        ],
+    }
+
+
+def carry_payload(result: CarryRolldownResult, currency: str) -> dict[str, Any]:
+    """Result of ``/v1/risk/carry``."""
+    return {
+        "instrument_type": result.instrument_type,
+        "currency": currency,
+        "valuation_date": result.valuation_date.isoformat(),
+        "hypothesis": CARRY_HYPOTHESIS,
+        "horizon": result.horizon,
+        "horizon_date": result.horizon_date.isoformat(),
+        "present_value": result.base_pv,
+        "horizon_present_value": result.horizon_pv,
+        "cashflows": result.cashflows,
+        "total": result.total,
+        "carry": result.carry,
+        "rolldown": result.rolldown,
+        "assumed_fixings": dict(result.assumed_fixings),
+    }

@@ -11,12 +11,18 @@ import logging
 import platform
 import time
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any, Literal
 
 import numpy as np
 
 import rate_derivatives_pricer
-from rate_derivatives_pricer.core.engines.base import DEFAULT_PRICING_METHOD, engine_for
+from rate_derivatives_pricer.core.conventions.tenor import Tenor
+from rate_derivatives_pricer.core.engines.base import (
+    DEFAULT_PRICING_METHOD,
+    PricingEngine,
+    engine_for,
+)
 from rate_derivatives_pricer.core.errors import ConventionError
 from rate_derivatives_pricer.core.instruments.swaps import Instrument, Swap
 from rate_derivatives_pricer.core.market.bootstrap import CurveBuilder, CurveBuildOptions
@@ -32,22 +38,36 @@ from rate_derivatives_pricer.core.registry import (
     INSTRUMENTS,
     INTERPOLATORS,
     RISK_MEASURES,
+    SCENARIOS,
 )
-from rate_derivatives_pricer.core.risk import BumpMode, RiskEngine, RiskSettings
+from rate_derivatives_pricer.core.risk import (
+    BumpMode,
+    CarryRolldown,
+    RiskEngine,
+    RiskSettings,
+    ScenarioPnL,
+    resolve_scenarios,
+)
 from rate_derivatives_pricer.services.curve_cache import CacheStats, CurveCache
 from rate_derivatives_pricer.services.mappers import (
+    carry_payload,
     curves_payload,
     market_fingerprint,
     pricing_payload,
     risk_payload,
+    scenario_catalog_entry,
+    scenario_input,
+    scenarios_payload,
     snapshot_from_input,
     snapshot_payload,
     trade_fingerprint,
 )
 from rate_derivatives_pricer.services.requests import (
     CalculationOptions,
+    CarryOptions,
     MarketInput,
     RiskOptions,
+    ScenarioOptions,
     TradeInput,
 )
 
@@ -144,6 +164,7 @@ class PricerService:
             "calendars": list(CALENDARS.keys()),
             "day_counts": list(DAY_COUNTS.keys()),
             "risk_measures": list(RISK_MEASURES.keys()),
+            "scenarios": [scenario_catalog_entry(SCENARIOS.get(name)) for name in SCENARIOS],
         }
 
     def cache_stats(self) -> CacheStats:
@@ -382,3 +403,173 @@ class PricerService:
                 input_hashes={"market": market_hash, "trade": trade_hash},
             ),
         )
+
+    def _shocked_market_setup(
+        self, market: MarketInput, trade: TradeInput, options: CalculationOptions
+    ) -> tuple[MarketSnapshot, Instrument, PricingEngine, CurveBuilder, dict[str, float]]:
+        """Snapshot, instrument, engine and a request-local builder for shocked markets.
+
+        Shocked markets bypass the curve cache; one builder serves every shock of the request,
+        so pillars a shock cannot move are solved once (ADR-028).
+        """
+        timings: dict[str, float] = {}
+        factory = INSTRUMENTS.get(trade.type)
+        engine = engine_for(trade.type, DEFAULT_PRICING_METHOD)
+        started = time.perf_counter()
+        snapshot = snapshot_from_input(market, options, self._provider)
+        timings["market_data"] = _elapsed_ms(started)
+        instrument = factory(dict(trade.params), snapshot.valuation_date)
+        if instrument.currency != snapshot.currency:
+            raise ConventionError(
+                "trade currency differs from the market data currency (no FX in v1)",
+                {"trade_currency": instrument.currency, "market_currency": snapshot.currency},
+            )
+        builder = CurveBuilder(
+            CurveBuildOptions(interpolation=options.interpolation, solver=options.solver)
+        )
+        return snapshot, instrument, engine, builder, timings
+
+    def scenarios(
+        self,
+        market: MarketInput,
+        trade: TradeInput,
+        scenario_options: ScenarioOptions,
+        options: CalculationOptions,
+    ) -> ServiceResult:
+        """Full revaluation of a trade under preset and custom scenarios (``/v1/risk/scenarios``).
+
+        Raises:
+            UnsupportedInstrumentError: Unknown instrument type.
+            UnsupportedScenarioError: Unknown preset, invalid custom scenario, duplicate name,
+                or a scenario selecting no quote.
+            ConventionError | ScheduleError: Invalid trade definition (or currency mismatch).
+            MarketDataError: Invalid market data or missing fixings.
+            RiskComputationError: A shocked market could not be calibrated or priced.
+        """
+        started = time.perf_counter()
+        # Fail fast on invalid scenarios, before any market data work.
+        scenarios = resolve_scenarios(
+            scenario_options.names, [scenario_input(raw) for raw in scenario_options.custom]
+        )
+        snapshot, instrument, engine, builder, timings = self._shocked_market_setup(
+            market, trade, options
+        )
+
+        def pricer(priced: Instrument, shocked: MarketSnapshot) -> float:
+            horizon = priced.last_cashflow_date if isinstance(priced, Swap) else None
+            return engine.present_value(priced, builder.build(shocked, horizon=horizon))
+
+        scenarios_started = time.perf_counter()
+        report = ScenarioPnL(pricer).compute(instrument, snapshot, scenarios)
+        timings["scenarios"] = _elapsed_ms(scenarios_started)
+        timings["total"] = _elapsed_ms(started)
+
+        market_hash = market_fingerprint(snapshot, options, self.core_version)
+        trade_hash = trade_fingerprint(trade)
+        logger.info(
+            "calculation_audit",
+            extra={
+                "calculation": "scenarios",
+                "market_hash": market_hash,
+                "trade_hash": trade_hash,
+                "snapshot_name": snapshot.name,
+                "trade_type": trade.type,
+                "currency": instrument.currency,
+                "options": {"interpolation": options.interpolation, "solver": options.solver},
+                "versions": self.version_info(),
+                "present_value": report.base_pv,
+                "scenario_pnl": {r.scenario.name: r.pnl for r in report.results},
+                "duration_ms": timings["total"],
+            },
+        )
+        return ServiceResult(
+            result=scenarios_payload(report, instrument.currency, snapshot.valuation_date),
+            diagnostics=Diagnostics(
+                timings_ms=timings,
+                input_hashes={"market": market_hash, "trade": trade_hash},
+            ),
+        )
+
+    def carry_rolldown(
+        self,
+        market: MarketInput,
+        trade: TradeInput,
+        carry_options: CarryOptions,
+        options: CalculationOptions,
+    ) -> ServiceResult:
+        """Carry and roll-down of a trade over a horizon (``/v1/risk/carry``, ADR-034).
+
+        Raises:
+            UnsupportedInstrumentError: Unknown instrument type, or an engine without carry.
+            ConventionError | ScheduleError: Invalid trade definition, horizon or currency.
+            MarketDataError: Invalid market data, missing fixings or overnight deposit quote.
+            RiskComputationError: The horizon market could not be calibrated or priced.
+        """
+        started = time.perf_counter()
+        horizon = Tenor.parse(carry_options.horizon)
+        snapshot, instrument, engine, builder, timings = self._shocked_market_setup(
+            market, trade, options
+        )
+        valuer = _EngineHorizonValuer(engine, builder)
+        carry_started = time.perf_counter()
+        result = CarryRolldown(valuer).compute(instrument, snapshot, horizon)
+        timings["carry"] = _elapsed_ms(carry_started)
+        timings["total"] = _elapsed_ms(started)
+
+        market_hash = market_fingerprint(snapshot, options, self.core_version)
+        trade_hash = trade_fingerprint(trade)
+        logger.info(
+            "calculation_audit",
+            extra={
+                "calculation": "carry_rolldown",
+                "market_hash": market_hash,
+                "trade_hash": trade_hash,
+                "snapshot_name": snapshot.name,
+                "trade_type": trade.type,
+                "currency": instrument.currency,
+                "options": {"interpolation": options.interpolation, "solver": options.solver},
+                "horizon": result.horizon,
+                "versions": self.version_info(),
+                "present_value": result.base_pv,
+                "carry": result.carry,
+                "rolldown": result.rolldown,
+                "duration_ms": timings["total"],
+            },
+        )
+        return ServiceResult(
+            result=carry_payload(result, instrument.currency),
+            diagnostics=Diagnostics(
+                timings_ms=timings,
+                input_hashes={"market": market_hash, "trade": trade_hash},
+            ),
+        )
+
+
+class _EngineHorizonValuer:
+    """:class:`HorizonValuer` built from a pricing engine and a request-local curve builder."""
+
+    def __init__(self, engine: PricingEngine, builder: CurveBuilder) -> None:
+        self._engine = engine
+        self._builder = builder
+
+    def _environment(self, instrument: Instrument, snapshot: MarketSnapshot) -> MarketEnvironment:
+        horizon = instrument.last_cashflow_date if isinstance(instrument, Swap) else None
+        return self._builder.build(snapshot, horizon=horizon)
+
+    def present_value(self, instrument: Instrument, snapshot: MarketSnapshot) -> float:
+        """PV on ``snapshot``."""
+        return self._engine.present_value(instrument, self._environment(instrument, snapshot))
+
+    def cashflows_paid(
+        self, instrument: Instrument, snapshot: MarketSnapshot, start: date, end: date
+    ) -> float:
+        """Signed undiscounted amounts paid in ``(start, end]``."""
+        env = self._environment(instrument, snapshot)
+        return self._engine.cashflows_paid(instrument, env, start, end)
+
+    def accrued_interest(
+        self, instrument: Instrument, snapshot: MarketSnapshot, start: date, end: date
+    ) -> float:
+        """Signed net interest accrued over ``[start, end)``."""
+        env = self._environment(instrument, snapshot)
+        return self._engine.accrued_interest(instrument, env, start, end)

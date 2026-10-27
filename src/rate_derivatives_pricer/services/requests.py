@@ -16,6 +16,7 @@ DEFAULT_SOLVER = "brent"
 INLINE_SNAPSHOT_NAME = "inline"
 DEFAULT_BUMP_SIZE_BP = 1.0
 DEFAULT_BUMP_MODE = "central"
+DEFAULT_CARRY_HORIZON = "3M"
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,3 +80,28 @@ class RiskOptions:
     measures: tuple[str, ...]
     bump_size_bp: float = DEFAULT_BUMP_SIZE_BP
     mode: str = DEFAULT_BUMP_MODE
+
+
+@dataclass(frozen=True, slots=True)
+class ScenarioOptions:
+    """Scenarios to run (``/v1/risk/scenarios``).
+
+    Attributes:
+        names: Preset scenario names (``"steepener"``...), in order.
+        custom: Custom scenarios ``{"name", "description", "curves", "points": [{"tenor",
+            "shift_bp"}]}``, run after the presets. Every preset runs when both are empty.
+    """
+
+    names: tuple[str, ...] = ()
+    custom: tuple[Mapping[str, Any], ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class CarryOptions:
+    """Carry/roll-down horizon (``/v1/risk/carry``).
+
+    Attributes:
+        horizon: Tenor of the horizon (``"3M"``).
+    """
+
+    horizon: str = DEFAULT_CARRY_HORIZON

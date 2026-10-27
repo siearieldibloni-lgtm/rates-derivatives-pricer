@@ -12,8 +12,10 @@ from rate_derivatives_pricer.sdk.client import (
     PricerClient,
     UnsupportedInstrumentError,
     UnsupportedRiskMeasureError,
+    UnsupportedScenarioError,
     ValidationFailedError,
     ois_swap,
+    scenario,
     vanilla_irs,
 )
 
@@ -29,7 +31,9 @@ __all__ = [
     "PricerClient",
     "UnsupportedInstrumentError",
     "UnsupportedRiskMeasureError",
+    "UnsupportedScenarioError",
     "ValidationFailedError",
     "ois_swap",
+    "scenario",
     "vanilla_irs",
 ]
