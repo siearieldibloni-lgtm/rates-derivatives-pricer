@@ -6,7 +6,10 @@ it only formats what the API returns (docs/API.md section 1).
 
 from __future__ import annotations
 
+import json
 import os
+from datetime import datetime
+from importlib import resources
 from typing import Any
 
 import plotly.graph_objects as go
@@ -14,8 +17,11 @@ from plotly.subplots import make_subplots
 
 from rate_derivatives_pricer.sdk.client import PricerClient
 from rate_derivatives_pricer.sdk.models import (
+    CacheStatsResult,
     CarryResult,
     CurveResult,
+    Diagnostics,
+    LogsResult,
     PriceResult,
     RiskMeasureResult,
     RiskResult,
@@ -26,6 +32,10 @@ API_URL_ENVIRONMENT_VARIABLE = "PRICER_API_URL"
 DEFAULT_API_URL = "http://localhost:8000"
 PERCENT = 100.0
 BASIS_POINTS = 10_000.0
+MILLISECONDS_PER_SECOND = 1000.0
+# Fields shown in their own columns of the log table; the others are summarised as JSON.
+LOG_EVENT_BASE_FIELDS = ("timestamp", "level", "logger", "event", "request_id")
+VALIDATION_REPORT = "quantlib_validation.json"
 
 
 def default_api_url() -> str:
@@ -344,3 +354,131 @@ def curve_change_figure(
         yaxis={"title": f"{other_name} - {base_name} (bp)"},
     )
     return figure
+
+
+# --------------------------------------------------------------------------- phase 4: diagnostic
+def history_entry(endpoint: str, request_id: str, diagnostics: Diagnostics) -> dict[str, Any]:
+    """Diagnostics of one API response, kept by the dashboard for the Diagnostic tab."""
+    return {
+        "endpoint": endpoint,
+        "request_id": request_id,
+        "timings_ms": dict(diagnostics.timings_ms),
+        "curve_cache": diagnostics.curve_cache,
+        "warnings": list(diagnostics.warnings),
+        "input_hashes": dict(diagnostics.input_hashes),
+    }
+
+
+def history_rows(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """One row per recent API call, most recent first."""
+    return [
+        {
+            "endpoint": entry["endpoint"],
+            "request_id": entry["request_id"],
+            "total (ms)": entry["timings_ms"].get("total"),
+            "curve cache": entry["curve_cache"] or "-",
+            "warnings": "; ".join(entry["warnings"]),
+            "market hash": entry["input_hashes"].get("market", "")[:12],
+        }
+        for entry in reversed(history)
+    ]
+
+
+def timings_figure(entry: dict[str, Any]) -> go.Figure:
+    """Duration of each step of one call (the ``total`` is the bar title, not a bar)."""
+    steps = {name: value for name, value in entry["timings_ms"].items() if name != "total"}
+    figure = go.Figure(go.Bar(x=list(steps), y=list(steps.values())))
+    total = entry["timings_ms"].get("total")
+    title = (
+        f"{entry['endpoint']}: total {total:,.1f} ms" if total is not None else entry["endpoint"]
+    )
+    figure.update_layout(title=title, height=300, margin={"t": 40, "b": 20}, yaxis={"title": "ms"})
+    return figure
+
+
+def cache_summary(stats: CacheStatsResult) -> dict[str, str]:
+    """Headline figures of the curve cache, formatted for display."""
+    ratio = "n/a" if stats.hit_ratio is None else f"{stats.hit_ratio * PERCENT:.1f} %"
+    return {
+        "Entries": f"{stats.size} / {stats.max_size}",
+        "Hit ratio": ratio,
+        "Hits / misses": f"{stats.hits} / {stats.misses}",
+        "Evictions": str(stats.evictions),
+    }
+
+
+def _offsets_ms(logs: LogsResult) -> list[float]:
+    """Time of each event since the first one, in milliseconds."""
+    start: datetime = logs.events[0].timestamp
+    return [
+        (event.timestamp - start).total_seconds() * MILLISECONDS_PER_SECOND for event in logs.events
+    ]
+
+
+def log_event_rows(logs: LogsResult) -> list[dict[str, Any]]:
+    """Timeline table of one request: offset, level, emitting module, event, business fields."""
+    rows = []
+    for offset, event in zip(_offsets_ms(logs), logs.events, strict=True):
+        content = event.model_dump(mode="json")
+        fields = {k: v for k, v in content.items() if k not in LOG_EVENT_BASE_FIELDS}
+        rows.append(
+            {
+                "t (ms)": round(offset, 3),
+                "level": event.level,
+                "logger": event.logger,
+                "event": event.event,
+                "fields": json.dumps(fields, default=str),
+            }
+        )
+    return rows
+
+
+def log_timeline_figure(logs: LogsResult) -> go.Figure:
+    """Events of one request over time, one row per emitting module, one colour per level."""
+    offsets = _offsets_ms(logs)
+    figure = go.Figure()
+    for level in dict.fromkeys(event.level for event in logs.events):
+        selected = [(t, e) for t, e in zip(offsets, logs.events, strict=True) if e.level == level]
+        figure.add_trace(
+            go.Scatter(
+                x=[t for t, _ in selected],
+                y=[e.logger for _, e in selected],
+                mode="markers",
+                name=level,
+                text=[e.event for _, e in selected],
+                hovertemplate="%{text}<br>%{x:.2f} ms<extra></extra>",
+                marker={"size": 10},
+            )
+        )
+    figure.update_layout(
+        height=360,
+        margin={"t": 30, "b": 20},
+        legend={"orientation": "h"},
+        xaxis={"title": "ms since the first event"},
+    )
+    return figure
+
+
+def validation_rows() -> list[dict[str, Any]]:
+    """Largest gaps measured against QuantLib, by layer, next to their tolerance.
+
+    The figures are a static report of the validation suite (``pytest -m validation``): QuantLib
+    is a test dependency only and is never installed with the dashboard.
+    """
+    report = json.loads(
+        resources.files("rate_derivatives_pricer.ui")
+        .joinpath("data", VALIDATION_REPORT)
+        .read_text("utf-8")
+    )
+    return [
+        {
+            "currency": entry["currency"],
+            "layer": entry["layer"],
+            "comparison": entry["comparison"],
+            "max gap": f"{entry['max_gap']:.1e}" if entry["max_gap"] else "exact",
+            "tolerance": f"{entry['tolerance']:.0e}" if entry["tolerance"] else "exact",
+            "within tolerance": entry["max_gap"] <= entry["tolerance"],
+            "ADR": entry["adr"],
+        }
+        for entry in report["entries"]
+    ]

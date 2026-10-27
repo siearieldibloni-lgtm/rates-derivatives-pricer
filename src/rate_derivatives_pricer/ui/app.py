@@ -1,4 +1,4 @@
-"""Streamlit dashboard: market curves, trade pricing, risk, scenarios and carry (phase 3).
+"""Streamlit dashboard: market curves, trade pricing, risk, scenarios, carry and diagnostics.
 
 Run with ``uv run streamlit run src/rate_derivatives_pricer/ui/app.py`` while the API is up
 (``PRICER_API_URL`` overrides the default ``http://localhost:8000``). Every number shown comes
@@ -7,18 +7,25 @@ from the API through the SDK.
 Tabs: *Market* (zero / forward / discount curves of the OIS and Ibor curves), *Trade* (OIS swap
 or vanilla IRS: schedule, PV per leg), *Risk* (DV01 per calibration instrument, per curve,
 convexity), *Scenarios* (P&L and shift matrix of the preset scenarios), *Carry* (carry and
-roll-down over a horizon) and *Compare* (the trade and the curves on two snapshots). The trade
-currency is the currency of the selected snapshot (EUR or USD).
+roll-down over a horizon), *Compare* (the trade and the curves on two snapshots) and
+*Diagnostic* (timings and cache status of the recent calls, curve cache, log timeline of a
+``request_id``, gaps against QuantLib). The trade currency is the currency of the selected
+snapshot (EUR or USD).
 """
 
 from __future__ import annotations
 
-from typing import Literal, cast
+from typing import Any, Literal, Protocol, cast
 
 import streamlit as st
 
-from rate_derivatives_pricer.sdk.client import PricerApiError, ois_swap, vanilla_irs
-from rate_derivatives_pricer.sdk.models import TradeModel
+from rate_derivatives_pricer.sdk.client import (
+    NotFoundError,
+    PricerApiError,
+    ois_swap,
+    vanilla_irs,
+)
+from rate_derivatives_pricer.sdk.models import Diagnostics, TradeModel
 from rate_derivatives_pricer.ui import views
 
 DEFAULT_NOTIONAL = 10_000_000.0
@@ -31,12 +38,33 @@ DEFAULT_BUMP_SIZE_BP = 1.0
 CARRY_HORIZONS = ["1M", "3M", "6M", "1Y"]
 DEFAULT_CARRY_HORIZON = "3M"
 PERCENT = 100.0
+# Recent API calls kept for the Diagnostic tab (per browser session).
+HISTORY_LENGTH = 20
+
+history: list[dict[str, Any]] = st.session_state.setdefault("history", [])
+
+
+class ApiResponse(Protocol):
+    """Response envelope of the API: what the Diagnostic tab keeps of each call."""
+
+    request_id: str
+    diagnostics: Diagnostics
+
+
+def remember[ResponseT: ApiResponse](endpoint: str, envelope: ResponseT) -> ResponseT:
+    """Keep the diagnostics of a response for the Diagnostic tab, and return the response."""
+    history.append(views.history_entry(endpoint, envelope.request_id, envelope.diagnostics))
+    del history[:-HISTORY_LENGTH]
+    return envelope
 
 
 def show_error(error: PricerApiError) -> None:
     """Display an API error with the request_id to quote to support."""
     st.error(f"{error.code}: {error.message}")
     st.caption(f"request_id: {error.request_id} | details: {error.details}")
+    if error.request_id:
+        history.append(views.history_entry(f"error {error.code}", error.request_id, Diagnostics()))
+        del history[:-HISTORY_LENGTH]
 
 
 st.set_page_config(page_title="Rate Derivatives Pricer", layout="wide")
@@ -64,13 +92,13 @@ with st.sidebar:
     options = {"interpolation": interpolation}
     st.caption(f"Trade currency: {currency}")
 
-market_tab, trade_tab, risk_tab, scenario_tab, carry_tab, compare_tab = st.tabs(
-    ["Market", "Trade", "Risk", "Scenarios", "Carry", "Compare"]
+market_tab, trade_tab, risk_tab, scenario_tab, carry_tab, compare_tab, diagnostic_tab = st.tabs(
+    ["Market", "Trade", "Risk", "Scenarios", "Carry", "Compare", "Diagnostic"]
 )
 
 with market_tab:
     try:
-        curves = client.build_curves(snapshot, options)
+        curves = remember("curves/build", client.build_curves(snapshot, options))
     except PricerApiError as error:
         show_error(error)
     else:
@@ -166,7 +194,7 @@ with trade_tab:
 
     if price_clicked:
         try:
-            priced = client.price(snapshot, current_trade(), options)
+            priced = remember("price", client.price(snapshot, current_trade(), options))
         except PricerApiError as error:
             show_error(error)
         else:
@@ -188,8 +216,11 @@ with risk_tab:
         st.warning("Select at least one risk measure.")
     else:
         try:
-            risked = client.risk(
-                snapshot, current_trade(), measures, {"size_bp": bump_size_bp}, options
+            risked = remember(
+                "risk",
+                client.risk(
+                    snapshot, current_trade(), measures, {"size_bp": bump_size_bp}, options
+                ),
             )
         except PricerApiError as error:
             show_error(error)
@@ -215,7 +246,10 @@ with scenario_tab:
         st.warning("Select at least one scenario.")
     else:
         try:
-            shocked = client.scenarios(snapshot, current_trade(), scenario_names, options=options)
+            shocked = remember(
+                "risk/scenarios",
+                client.scenarios(snapshot, current_trade(), scenario_names, options=options),
+            )
         except PricerApiError as error:
             show_error(error)
         else:
@@ -233,7 +267,9 @@ with carry_tab:
         st.info("Define a trade in the Trade tab and press 'Carry / roll-down'.")
     else:
         try:
-            carried = client.carry_rolldown(snapshot, current_trade(), horizon, options)
+            carried = remember(
+                "risk/carry", client.carry_rolldown(snapshot, current_trade(), horizon, options)
+            )
         except PricerApiError as error:
             show_error(error)
         else:
@@ -260,8 +296,8 @@ with compare_tab:
         st.warning(f"No other {currency} snapshot to compare with.")
     else:
         try:
-            base_price = client.price(snapshot, current_trade(), options)
-            other_price = client.price(other_snapshot, current_trade(), options)
+            base_price = remember("price", client.price(snapshot, current_trade(), options))
+            other_price = remember("price", client.price(other_snapshot, current_trade(), options))
             base_curves = client.build_curves(snapshot, options)
             other_curves = client.build_curves(other_snapshot, options)
         except PricerApiError as error:
@@ -285,3 +321,64 @@ with compare_tab:
                 f"request_ids {base_price.request_id}, {other_price.request_id} | the trade keeps "
                 "its dates: valued on a later snapshot it is one day older"
             )
+
+with diagnostic_tab:
+    st.subheader("Recent API calls")
+    if history:
+        st.dataframe(views.history_rows(history), width="stretch", hide_index=True)
+        request_ids = [entry["request_id"] for entry in reversed(history)]
+        selected_id = st.selectbox("Request", request_ids, key="diagnostic_request")
+        selected = next(entry for entry in history if entry["request_id"] == selected_id)
+        if selected["timings_ms"]:
+            st.plotly_chart(views.timings_figure(selected), width="stretch")
+    else:
+        selected_id = ""
+        st.info("No API call yet in this session.")
+
+    st.subheader("Curve cache")
+    try:
+        cache = client.cache_stats()
+    except PricerApiError as error:
+        show_error(error)
+    else:
+        columns = st.columns(4)
+        for column, (label, value) in zip(columns, views.cache_summary(cache).items(), strict=True):
+            column.metric(label, value)
+        st.caption(
+            f"TTL: {cache.ttl_seconds or 'none'} | per process: each API worker has its own cache"
+        )
+        if st.button("Clear curve cache", key="clear_cache"):
+            try:
+                cleared = client.clear_cache()
+            except PricerApiError as error:
+                show_error(error)
+            else:
+                st.success(f"{cleared.entries_dropped} cached market(s) dropped")
+
+    st.subheader("Log timeline")
+    lookup_id = st.text_input(
+        "request_id (from a response, an error or the X-Request-ID header)",
+        value=selected_id,
+        key="lookup_request_id",
+    ).strip()
+    if lookup_id:
+        try:
+            timeline = client.logs(lookup_id)
+        except NotFoundError:
+            st.info(f"No buffered log event for {lookup_id} (unknown, evicted or other worker).")
+        except PricerApiError as error:
+            show_error(error)
+        else:
+            st.caption(
+                f"{timeline.event_count} events over {timeline.duration_ms:,.1f} ms | buffer "
+                f"{timeline.buffer.size}/{timeline.buffer.capacity} events"
+            )
+            st.plotly_chart(views.log_timeline_figure(timeline), width="stretch")
+            st.dataframe(views.log_event_rows(timeline), width="stretch", hide_index=True)
+
+    st.subheader("Validation against QuantLib")
+    st.dataframe(views.validation_rows(), width="stretch", hide_index=True)
+    st.caption(
+        "Largest gaps measured by the validation suite (uv run pytest -m validation); QuantLib "
+        "is a test oracle only and is not installed with the dashboard."
+    )
