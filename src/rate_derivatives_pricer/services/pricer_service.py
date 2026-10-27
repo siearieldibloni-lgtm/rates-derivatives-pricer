@@ -43,6 +43,7 @@ from rate_derivatives_pricer.core.registry import (
 from rate_derivatives_pricer.core.risk import (
     BumpMode,
     CarryRolldown,
+    Pricer,
     RiskEngine,
     RiskSettings,
     ScenarioPnL,
@@ -330,10 +331,9 @@ class PricerService:
             RiskComputationError: A bumped market could not be calibrated or priced.
         """
         started = time.perf_counter()
-        timings: dict[str, float] = {}
         # Fail fast on unknown names, before any market data work.
-        factory = INSTRUMENTS.get(trade.type)
-        engine = engine_for(trade.type, DEFAULT_PRICING_METHOD)
+        INSTRUMENTS.get(trade.type)
+        engine_for(trade.type, DEFAULT_PRICING_METHOD)
         for name in risk_options.measures:
             RISK_MEASURES.get(name)
         try:
@@ -344,25 +344,10 @@ class PricerService:
                 {"mode": risk_options.mode, "available": [m.value for m in BumpMode]},
             ) from None
 
-        market_started = time.perf_counter()
-        snapshot = snapshot_from_input(market, options, self._provider)
-        timings["market_data"] = _elapsed_ms(market_started)
-        instrument = factory(dict(trade.params), snapshot.valuation_date)
-        if instrument.currency != snapshot.currency:
-            raise ConventionError(
-                "trade currency differs from the market data currency (no FX in v1)",
-                {"trade_currency": instrument.currency, "market_currency": snapshot.currency},
-            )
-
-        # One builder for all the bumps of this request: it remembers the pillars it has solved.
-        builder = CurveBuilder(
-            CurveBuildOptions(interpolation=options.interpolation, solver=options.solver)
+        snapshot, instrument, engine, builder, timings = self._shocked_market_setup(
+            market, trade, options
         )
-
-        def pricer(priced: Instrument, bumped: MarketSnapshot) -> float:
-            horizon = priced.last_cashflow_date if isinstance(priced, Swap) else None
-            return engine.present_value(priced, builder.build(bumped, horizon=horizon))
-
+        pricer = _horizon_pricer(engine, builder)
         risk_started = time.perf_counter()
         report = RiskEngine(pricer).compute(
             instrument,
@@ -454,13 +439,10 @@ class PricerService:
         snapshot, instrument, engine, builder, timings = self._shocked_market_setup(
             market, trade, options
         )
-
-        def pricer(priced: Instrument, shocked: MarketSnapshot) -> float:
-            horizon = priced.last_cashflow_date if isinstance(priced, Swap) else None
-            return engine.present_value(priced, builder.build(shocked, horizon=horizon))
-
         scenarios_started = time.perf_counter()
-        report = ScenarioPnL(pricer).compute(instrument, snapshot, scenarios)
+        report = ScenarioPnL(_horizon_pricer(engine, builder)).compute(
+            instrument, snapshot, scenarios
+        )
         timings["scenarios"] = _elapsed_ms(scenarios_started)
         timings["total"] = _elapsed_ms(started)
 
@@ -543,6 +525,16 @@ class PricerService:
                 input_hashes={"market": market_hash, "trade": trade_hash},
             ),
         )
+
+
+def _horizon_pricer(engine: PricingEngine, builder: CurveBuilder) -> Pricer:
+    """Pricer of shocked markets: curves built only up to the trade's last cashflow (ADR-028)."""
+
+    def pricer(instrument: Instrument, snapshot: MarketSnapshot) -> float:
+        horizon = instrument.last_cashflow_date if isinstance(instrument, Swap) else None
+        return engine.present_value(instrument, builder.build(snapshot, horizon=horizon))
+
+    return pricer
 
 
 class _EngineHorizonValuer:
