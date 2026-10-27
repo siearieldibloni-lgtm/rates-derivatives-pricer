@@ -4,6 +4,7 @@ from rate_derivatives_pricer.sdk.client import (
     ApiUnavailableError,
     CalibrationFailedError,
     ComputationFailedError,
+    IncompatibleApiVersionError,
     InternalServerError,
     InvalidTradeDefinitionError,
     MarketDataInvalidError,
@@ -17,12 +18,14 @@ from rate_derivatives_pricer.sdk.client import (
     ois_swap,
     scenario,
     vanilla_irs,
+    versions_compatible,
 )
 
 __all__ = [
     "ApiUnavailableError",
     "CalibrationFailedError",
     "ComputationFailedError",
+    "IncompatibleApiVersionError",
     "InternalServerError",
     "InvalidTradeDefinitionError",
     "MarketDataInvalidError",
@@ -36,4 +39,5 @@ __all__ = [
     "ois_swap",
     "scenario",
     "vanilla_irs",
+    "versions_compatible",
 ]
