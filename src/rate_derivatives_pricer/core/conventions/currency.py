@@ -19,9 +19,9 @@ from rate_derivatives_pricer.core.conventions.day_count import (
     DayCountConvention,
     day_count_from_name,
 )
-from rate_derivatives_pricer.core.conventions.tenor import Frequency
+from rate_derivatives_pricer.core.conventions.tenor import Frequency, Tenor
 from rate_derivatives_pricer.core.errors import ConventionError
-from rate_derivatives_pricer.core.market.indices import OvernightIndex
+from rate_derivatives_pricer.core.market.indices import IborIndex, OvernightIndex
 from rate_derivatives_pricer.core.registry import CONVENTIONS
 from rate_derivatives_pricer.core.schedule.generator import DateGenerationRule
 
@@ -73,6 +73,31 @@ class OisConventions:
 
 
 @dataclass(frozen=True, slots=True)
+class IborSwapConventions:
+    """Conventions of a vanilla interest rate swap (fixed leg vs an Ibor index).
+
+    The floating leg takes its frequency, day count and calendar from the Ibor index; only the
+    fixed leg and the schedule rules are described here.
+
+    Attributes:
+        fixed_frequency: Payment frequency of the fixed leg.
+        fixed_day_count: Accrual convention of the fixed leg.
+        business_day_convention: Adjustment of accrual dates (also of the maturity date).
+        end_of_month: End-of-month rule, applied when the start date is the last business day of
+            its month.
+        rule: Schedule generation direction.
+        payment_lag_days: Business days between accrual end and payment.
+    """
+
+    fixed_frequency: Frequency
+    fixed_day_count: DayCountConvention
+    business_day_convention: BusinessDayConvention
+    end_of_month: bool
+    rule: DateGenerationRule
+    payment_lag_days: int
+
+
+@dataclass(frozen=True, slots=True)
 class CurrencyConventions:
     """All market conventions of one currency.
 
@@ -84,6 +109,10 @@ class CurrencyConventions:
         overnight_index: Default overnight index (discounting and OIS projection).
         deposit: Conventions of the overnight deposit calibration instrument.
         ois: Conventions of the OIS calibration instruments and traded OIS.
+        ibor_indices: Ibor indices of the currency (empty for a currency without term rates).
+        default_ibor_index: Name of the index used by a vanilla swap that names none.
+        ibor_deposit: Conventions of the Ibor deposit calibration instrument.
+        ibor_swap: Conventions of vanilla swaps against the Ibor indices.
     """
 
     currency: str
@@ -93,6 +122,49 @@ class CurrencyConventions:
     overnight_index: OvernightIndex
     deposit: DepositConventions
     ois: OisConventions
+    ibor_indices: tuple[IborIndex, ...] = ()
+    default_ibor_index: str | None = None
+    ibor_deposit: DepositConventions | None = None
+    ibor_swap: IborSwapConventions | None = None
+
+    def ibor_index(self, name: str | None = None) -> IborIndex:
+        """Ibor index called ``name`` (the default index when ``None``).
+
+        Raises:
+            ConventionError: If the currency has no such index.
+        """
+        wanted = (name or self.default_ibor_index or "").strip().upper()
+        for index in self.ibor_indices:
+            if index.name == wanted:
+                return index
+        raise ConventionError(
+            f"unknown Ibor index for {self.currency}: {wanted!r}",
+            {"index": wanted, "available": [index.name for index in self.ibor_indices]},
+        )
+
+    def require_ibor_swap(self) -> IborSwapConventions:
+        """Vanilla swap conventions.
+
+        Raises:
+            ConventionError: If the currency defines none.
+        """
+        if self.ibor_swap is None:
+            raise ConventionError(
+                f"no vanilla swap conventions for {self.currency}", {"currency": self.currency}
+            )
+        return self.ibor_swap
+
+    def require_ibor_deposit(self) -> DepositConventions:
+        """Ibor deposit conventions.
+
+        Raises:
+            ConventionError: If the currency defines none.
+        """
+        if self.ibor_deposit is None:
+            raise ConventionError(
+                f"no Ibor deposit conventions for {self.currency}", {"currency": self.currency}
+            )
+        return self.ibor_deposit
 
 
 def _require(config: Mapping[str, Any], key: str, context: str) -> Any:
@@ -130,17 +202,7 @@ def conventions_from_dict(config: Mapping[str, Any]) -> CurrencyConventions:
         day_count=day_count_from_name(_require(index_config, "day_count", "overnight_index")),
     )
 
-    deposit_config = _require(config, "deposit", currency)
-    deposit = DepositConventions(
-        settlement_days=int(_require(deposit_config, "settlement_days", "deposit")),
-        business_day_convention=_enum_value(
-            BusinessDayConvention,
-            _require(deposit_config, "business_day_convention", "deposit"),
-            "deposit.business_day_convention",
-        ),
-        end_of_month=bool(_require(deposit_config, "end_of_month", "deposit")),
-        day_count=day_count_from_name(_require(deposit_config, "day_count", "deposit")),
-    )
+    deposit = _deposit_conventions(_require(config, "deposit", currency), "deposit")
 
     ois_config = _require(config, "ois", currency)
     ois = OisConventions(
@@ -158,6 +220,9 @@ def conventions_from_dict(config: Mapping[str, Any]) -> CurrencyConventions:
         payment_lag_days=int(_require(ois_config, "payment_lag_days", "ois")),
     )
 
+    ibor_config = config.get("ibor")
+    ibor_fields: dict[str, Any] = _ibor_conventions_from_dict(ibor_config, currency)
+
     return CurrencyConventions(
         currency=currency,
         calendar=calendar,
@@ -166,7 +231,67 @@ def conventions_from_dict(config: Mapping[str, Any]) -> CurrencyConventions:
         overnight_index=overnight_index,
         deposit=deposit,
         ois=ois,
+        **ibor_fields,
     )
+
+
+def _deposit_conventions(config: Mapping[str, Any], context: str) -> DepositConventions:
+    return DepositConventions(
+        settlement_days=int(_require(config, "settlement_days", context)),
+        business_day_convention=_enum_value(
+            BusinessDayConvention,
+            _require(config, "business_day_convention", context),
+            f"{context}.business_day_convention",
+        ),
+        end_of_month=bool(_require(config, "end_of_month", context)),
+        day_count=day_count_from_name(_require(config, "day_count", context)),
+    )
+
+
+def _ibor_conventions_from_dict(config: Mapping[str, Any] | None, currency: str) -> dict[str, Any]:
+    """Optional ``ibor`` section: indices, deposit and vanilla swap conventions."""
+    if config is None:
+        return {}
+    indices = []
+    for position, raw in enumerate(_require(config, "indices", "ibor")):
+        context = f"ibor.indices[{position}]"
+        indices.append(
+            IborIndex(
+                name=str(_require(raw, "name", context)).upper(),
+                currency=currency,
+                tenor=Tenor.parse(str(_require(raw, "tenor", context))),
+                fixing_days=int(_require(raw, "fixing_days", context)),
+                fixing_calendar=calendar_from_name(_require(raw, "calendar", context)),
+                day_count=day_count_from_name(_require(raw, "day_count", context)),
+                business_day_convention=_enum_value(
+                    BusinessDayConvention,
+                    _require(raw, "business_day_convention", context),
+                    f"{context}.business_day_convention",
+                ),
+                end_of_month=bool(_require(raw, "end_of_month", context)),
+            )
+        )
+    swap_config = _require(config, "swap", "ibor")
+    swap = IborSwapConventions(
+        fixed_frequency=Frequency.parse(_require(swap_config, "fixed_frequency", "ibor.swap")),
+        fixed_day_count=day_count_from_name(_require(swap_config, "fixed_day_count", "ibor.swap")),
+        business_day_convention=_enum_value(
+            BusinessDayConvention,
+            _require(swap_config, "business_day_convention", "ibor.swap"),
+            "ibor.swap.business_day_convention",
+        ),
+        end_of_month=bool(_require(swap_config, "end_of_month", "ibor.swap")),
+        rule=_enum_value(
+            DateGenerationRule, _require(swap_config, "rule", "ibor.swap"), "ibor.swap.rule"
+        ),
+        payment_lag_days=int(_require(swap_config, "payment_lag_days", "ibor.swap")),
+    )
+    return {
+        "ibor_indices": tuple(indices),
+        "default_ibor_index": str(_require(config, "default_index", "ibor")).upper(),
+        "ibor_deposit": _deposit_conventions(_require(config, "deposit", "ibor"), "ibor.deposit"),
+        "ibor_swap": swap,
+    }
 
 
 def register_conventions_from_package_data() -> None:
