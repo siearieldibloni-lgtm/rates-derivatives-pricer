@@ -145,7 +145,10 @@ Une phase = une branche = une PR. La CI doit passer avant la fusion ;
   dashboard (onglets Scénarios, Carry, Comparaison) ; test d'intégration SDK -> HTTP -> cœur identique au bit près, et
   *golden file* de la phase 3.
 
-## Phase 4 : industrialisation et dashboard complet
+## Phase 4 : industrialisation et dashboard complet — TERMINÉE
+
+> Fusionnée dans `main` (PR #11, branche `phase-4-industrialization`). CI verte sur la PR, y compris le nouveau job
+> « Docker smoke test ». Décisions de la phase : ADR-037 à ADR-042. Avec elle, la **v1 est terminée**.
 
 **Livrables**
 - Dockerfiles (API, UI), `docker-compose.yml`, smoke test du conteneur en CI.
@@ -162,6 +165,23 @@ Une phase = une branche = une PR. La CI doit passer avant la fusion ;
 - À partir d'un `request_id`, on reconstruit la chronologie complète d'un calcul via logs et endpoint.
 - Un lot de 100 trades est pricé avec gestion d'erreur par trade (un trade invalide n'empêche pas les autres).
 - Un tiers peut cloner le repo et lancer la plateforme en suivant le README seul.
+
+**Bilan de vérification** (en local sous Windows et sur la CI GitHub sous Linux)
+- Boucle `ruff check`, `ruff format --check`, `mypy` (strict sur `core/` et `services/`), `lint-imports` (5 contrats) et
+  `pytest` : **565 tests verts** (dont 192 de validation QuantLib), couverture totale **94 %**.
+- Docker : `docker compose up` lance l'API et le dashboard en une commande, vérifié en local (Docker Desktop sous
+  Windows : le dashboard atteint l'API par le réseau Compose) ; job CI « Docker smoke test » vert (build des deux
+  images, `docker compose up -d --wait` sur les `HEALTHCHECK`, puis `scripts/smoke_test.py`) (ADR-041).
+- Chronologie d'un calcul : à partir d'un `request_id`, `GET /v1/logs/{request_id}` restitue tous les événements de
+  `request_started` à `request_completed`, en passant par le bootstrap, le pricing et l'audit ; même `market_hash` et
+  même PV que la réponse (`test_a_request_id_rebuilds_the_timeline_of_a_calculation`, ADR-037).
+- Batch : 100 trades dont 25 invalides (4 codes d'erreur différents) donnent 75 résultats et 25 erreurs par trade, en
+  `200` ; chaque trade pricé est identique au bit près à `/v1/price` (`test_batch_of_100_trades_reports_errors_per_trade`,
+  ADR-040).
+- Observabilité : `/metrics` (requêtes et latences par gabarit de route, erreurs par code, cache, batch),
+  `GET /v1/cache/stats` et `DELETE /v1/cache` (ADR-038) ; SDK avec retries, `request_id` client et vérification de
+  version (ADR-039) ; onglet Diagnostic du dashboard (ADR-042).
+- README : guide de démarrage Docker et local, diagramme d'architecture, exemples SDK, section observabilité.
 
 ## Phase 5 (hors v1) : extensions candidates
 

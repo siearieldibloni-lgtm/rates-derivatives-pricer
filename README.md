@@ -3,10 +3,10 @@
 Un **pricer de dérivés de taux** extensible, de type production, en Python : bibliothèque quant en POO,
 service FastAPI, SDK Python et dashboard Streamlit, livrés en conteneurs Docker.
 
-> Statut : **Phases 0 à 3 terminées** (outillage et CI ; swap OIS €STR de bout en bout ; IRS vanille contre Euribor
-> 3M/6M, bootstrap multi-courbes et risque par bump-and-reprice ; scénarios, carry/roll-down et USD SOFR par
-> configuration ; tout validé contre QuantLib). **Phase 4 en cours** (Docker, observabilité, pricing batch, dashboard
-> complet). Voir `docs/ROADMAP.md`.
+> Statut : **v1 terminée (phases 0 à 4)** : outillage et CI ; swap OIS €STR de bout en bout ; IRS vanille contre
+> Euribor 3M/6M, bootstrap multi-courbes et risque par bump-and-reprice ; scénarios, carry/roll-down et USD SOFR par
+> configuration, tout validé contre QuantLib ; Docker, observabilité (logs par `request_id`, métriques Prometheus),
+> pricing batch et dashboard complet. Les extensions (phase 5) ne sont pas encore planifiées. Voir `docs/ROADMAP.md`.
 >
 > Les données de marché fournies (`data/market/EUR_2026-10-19.json`, `EUR_2026-10-20.json`, `USD_2026-10-19.json`)
 > sont **synthétiques** (ADR-023, ADR-032, ADR-033).
