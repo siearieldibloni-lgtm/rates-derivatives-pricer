@@ -31,13 +31,19 @@ Package : `rate_derivatives_pricer` (repo : `rate-derivatives-pricer`).
 - **Phase 3 (risque avancé : scénarios, carry/roll-down, USD par configuration) : TERMINÉE et fusionnée** (PR #9).
   `/v1/risk/scenarios`, `/v1/risk/carry`, USD SOFR par configuration ; 533 tests verts dont la validation QuantLib,
   couverture totale 95 %, CI verte.
-- **Phase courante : 4 (industrialisation : Docker, observabilité, batch, dashboard complet)**. Branche à créer :
-  `phase-4-industrialization`.
+- **Phase 4 (industrialisation : Docker, observabilité, batch, dashboard complet) : TERMINÉE et fusionnée** (PR #11).
+  Images Docker et `docker compose up`, smoke test conteneur en CI, `/v1/batch/price`, `/v1/logs/{request_id}`,
+  `/metrics`, `/v1/cache`, SDK avec retries, onglet Diagnostic ; 565 tests verts dont la validation QuantLib,
+  couverture totale 94 %, CI verte.
+- **La v1 est terminée. Aucune phase courante.** La phase 5 (hors v1) n'est qu'une liste d'extensions candidates :
+  chacune doit d'abord devenir une entrée de `docs/ROADMAP.md` (livrables, critères) et une décision dans
+  `docs/DECISIONS.md` avant toute implémentation.
 - Conventions EUR dans `core/conventions/data/EUR.json` (ADR-019, Euribor et IRS : ADR-027) ; fixings et composition
   overnight : ADR-020 ; bootstrap multi-courbes : ADR-028 ; définitions du risque : ADR-029. USD (SOFR) dans
   `USD.json` (ADR-032) ; scénarios : ADR-033 ; hypothèse de carry/roll-down (courbe inchangée) : ADR-034.
 - Logging : `rate_derivatives_pricer.api.logging_config` (`configure_logging`, `request_context`). Le cœur se
-  contente de `logging.getLogger(__name__)` ; le middleware `api/middleware.py` positionne le `request_id`.
+  contente de `logging.getLogger(__name__)` ; le middleware `api/middleware.py` positionne le `request_id`. Ring
+  buffer `api/log_buffer.py` (ADR-037), métriques `api/metrics.py` (ADR-038) ; Docker et smoke test : ADR-041.
 - Tolérances de validation : uniquement dans `tests/validation/tolerances.py`.
 - Mettre à jour cette section à la fin de chaque phase. Ne jamais travailler en dehors de la phase courante.
 
