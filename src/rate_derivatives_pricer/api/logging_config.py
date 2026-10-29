@@ -99,20 +99,30 @@ def _extra_fields(record: logging.LogRecord) -> dict[str, Any]:
     }
 
 
+def record_payload(record: logging.LogRecord) -> dict[str, Any]:
+    """Stable fields of a record (docs/API.md section 7.1), without the stack trace.
+
+    Shared by the JSON formatter and the in-memory log buffer (``api.log_buffer``), so that an
+    event looks the same on stdout and through ``GET /v1/logs/{request_id}``.
+    """
+    payload: dict[str, Any] = {
+        "timestamp": datetime.fromtimestamp(record.created, tz=UTC).isoformat(),
+        "level": record.levelname,
+        "logger": _short_logger_name(record.name),
+        # The log message is the stable event name (e.g. "pricing_completed").
+        "event": record.getMessage(),
+        "request_id": getattr(record, "request_id", NO_REQUEST_ID),
+    }
+    payload.update(_extra_fields(record))
+    return payload
+
+
 class JsonFormatter(logging.Formatter):
     """Render a record as a single-line JSON object with stable field names."""
 
     def format(self, record: logging.LogRecord) -> str:
         """Serialize the record; non-JSON-native extra values fall back to ``str()``."""
-        payload: dict[str, Any] = {
-            "timestamp": datetime.fromtimestamp(record.created, tz=UTC).isoformat(),
-            "level": record.levelname,
-            "logger": _short_logger_name(record.name),
-            # The log message is the stable event name (e.g. "pricing_completed").
-            "event": record.getMessage(),
-            "request_id": getattr(record, "request_id", NO_REQUEST_ID),
-        }
-        payload.update(_extra_fields(record))
+        payload = record_payload(record)
         if record.exc_info:
             # Full stack trace stays in the logs; clients only ever get a generic message.
             payload["exc_info"] = self.formatException(record.exc_info)
@@ -155,6 +165,9 @@ def configure_logging(
     handler = logging.StreamHandler(stream if stream is not None else sys.stdout)
     handler.addFilter(RequestIdFilter())
     handler.setFormatter(JsonFormatter() if log_format == "json" else TextFormatter())
+    # The handler keeps its own level: the in-memory log buffer may lower the root level to
+    # capture more detail without making stdout noisier.
+    handler.setLevel(level.upper())
 
     root = logging.getLogger()
     for existing in root.handlers[:]:

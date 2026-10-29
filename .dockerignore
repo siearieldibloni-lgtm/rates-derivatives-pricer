@@ -1,0 +1,21 @@
+# Only pyproject.toml, uv.lock, README.md, src/ and data/market/ go into the images.
+.git
+.github
+.venv
+**/__pycache__
+**/*.py[cod]
+.mypy_cache
+.ruff_cache
+.pytest_cache
+.hypothesis
+.import_linter_cache
+.coverage
+coverage.xml
+htmlcov
+docs
+tests
+scripts
+.claude
+*.egg-info
+build
+dist

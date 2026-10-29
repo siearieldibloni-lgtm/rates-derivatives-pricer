@@ -4,7 +4,12 @@ from typing import Any
 
 import pytest
 
-from rate_derivatives_pricer.core.errors import ConventionError, UnsupportedRiskMeasureError
+from rate_derivatives_pricer.core.errors import (
+    ConventionError,
+    RatesPricerError,
+    UnsupportedInstrumentError,
+    UnsupportedRiskMeasureError,
+)
 from rate_derivatives_pricer.core.market.environment import MarketEnvironment
 from rate_derivatives_pricer.core.market.providers import FileMarketDataProvider, snapshot_to_dict
 from rate_derivatives_pricer.core.market.snapshot import MarketSnapshot
@@ -17,6 +22,7 @@ from rate_derivatives_pricer.services.mappers import (
 )
 from rate_derivatives_pricer.services.pricer_service import PricerService
 from rate_derivatives_pricer.services.requests import (
+    BatchTrade,
     CalculationOptions,
     InlineMarket,
     RiskOptions,
@@ -195,3 +201,44 @@ def test_risk_validates_before_working_and_does_not_use_the_curve_cache() -> Non
     assert service.cache_stats().size == 0
     assert {"market_data", "risk", "total"} <= set(outcome.diagnostics.timings_ms)
     assert [m["measure"] for m in outcome.result["measures"]] == ["parallel_dv01", "convexity"]
+
+
+def test_clear_cache_reports_the_dropped_entries() -> None:
+    service = _service()
+    service.build_curves(SnapshotReference(REFERENCE_SNAPSHOT), CalculationOptions())
+    assert service.clear_cache() == 1
+    assert service.cache_stats().size == 0
+    assert service.clear_cache() == 0
+
+
+def test_price_batch_isolates_failing_trades() -> None:
+    service = _service()
+    params = {"notional": 1e6, "fixed_rate": 0.02, "direction": "pay_fixed", "maturity": "2Y"}
+    trades = [
+        BatchTrade("ok", TradeInput("ois_swap", params)),
+        BatchTrade("unknown", TradeInput("cap", params)),
+        BatchTrade("usd", TradeInput("ois_swap", {**params, "currency": "USD"})),
+        # Not validated by the API schemas here: the factory fails with a non-domain error.
+        BatchTrade("broken", TradeInput("ois_swap", {**params, "notional": None})),
+        BatchTrade("irs", TradeInput("vanilla_irs", params)),
+    ]
+    outcome = service.price_batch(
+        SnapshotReference(REFERENCE_SNAPSHOT), trades, CalculationOptions()
+    )
+    assert [item.trade_id for item in outcome.items] == ["ok", "unknown", "usd", "broken", "irs"]
+    errors = {item.trade_id: item.error for item in outcome.items}
+    assert errors["ok"] is None
+    assert errors["irs"] is None
+    assert isinstance(errors["unknown"], UnsupportedInstrumentError)
+    assert isinstance(errors["usd"], ConventionError)
+    assert errors["broken"] is not None
+    assert not isinstance(errors["broken"], RatesPricerError)
+    single = service.price(
+        SnapshotReference(REFERENCE_SNAPSHOT), trades[0].trade, CalculationOptions()
+    )
+    assert outcome.items[0].result == single.result
+    assert outcome.items[0].trade_hash == single.diagnostics.input_hashes["trade"]
+    assert outcome.diagnostics.curve_cache == "miss"  # one bootstrap for the whole batch
+    assert service.cache_stats().misses == 1
+    assert {"market_data", "curve_build", "pricing", "total"} <= set(outcome.diagnostics.timings_ms)
+    assert (outcome.currency, outcome.valuation_date.isoformat()) == ("EUR", "2026-10-19")

@@ -1,0 +1,25 @@
+{
+  "description": "Largest gaps measured against QuantLib by `uv run pytest -m validation` (9 markets per currency: 3 valuation dates x 3 parallel shocks). Tolerances are the constants of tests/validation/tolerances.py.",
+  "entries": [
+    {"currency": "EUR", "layer": "Calendar", "comparison": "TARGET business days 1995-2060", "max_gap": 0.0, "tolerance": 0.0, "tolerance_name": null, "adr": "ADR-024"},
+    {"currency": "EUR", "layer": "Curve", "comparison": "ESTR discount factors (log_linear_df)", "max_gap": 2.5e-13, "tolerance": 1e-10, "tolerance_name": "DISCOUNT_FACTOR_ABS", "adr": "ADR-024"},
+    {"currency": "EUR", "layer": "Curve", "comparison": "ESTR discount factors (linear_zero)", "max_gap": 2.3e-11, "tolerance": 1e-10, "tolerance_name": "DISCOUNT_FACTOR_ABS", "adr": "ADR-024"},
+    {"currency": "EUR", "layer": "OIS swap", "comparison": "PV / notional (1 404 swaps)", "max_gap": 2.3e-13, "tolerance": 1e-8, "tolerance_name": "SWAP_REL", "adr": "ADR-024"},
+    {"currency": "EUR", "layer": "OIS swap", "comparison": "Par rate (relative)", "max_gap": 9.9e-11, "tolerance": 1e-8, "tolerance_name": "SWAP_REL", "adr": "ADR-024"},
+    {"currency": "EUR", "layer": "OIS swap", "comparison": "Annuity (relative)", "max_gap": 5.6e-14, "tolerance": 1e-8, "tolerance_name": "SWAP_REL", "adr": "ADR-024"},
+    {"currency": "EUR", "layer": "Curve", "comparison": "Euribor 3M/6M discount factors (log_linear_df)", "max_gap": 3.5e-13, "tolerance": 1e-10, "tolerance_name": "DISCOUNT_FACTOR_ABS", "adr": "ADR-031"},
+    {"currency": "EUR", "layer": "Curve", "comparison": "Euribor 3M/6M discount factors (linear_zero)", "max_gap": 3.0e-12, "tolerance": 1e-10, "tolerance_name": "DISCOUNT_FACTOR_ABS", "adr": "ADR-031"},
+    {"currency": "EUR", "layer": "Vanilla IRS", "comparison": "PV / notional (972 swaps)", "max_gap": 2.2e-13, "tolerance": 1e-8, "tolerance_name": "SWAP_REL", "adr": "ADR-031"},
+    {"currency": "EUR", "layer": "Vanilla IRS", "comparison": "Par rate (relative)", "max_gap": 4.0e-10, "tolerance": 1e-8, "tolerance_name": "SWAP_REL", "adr": "ADR-031"},
+    {"currency": "EUR", "layer": "Vanilla IRS", "comparison": "Annuity (relative)", "max_gap": 5.6e-14, "tolerance": 1e-8, "tolerance_name": "SWAP_REL", "adr": "ADR-031"},
+    {"currency": "EUR", "layer": "Risk", "comparison": "Bucket DV01 vs QuantLib finite differences (per parallel DV01)", "max_gap": 9.8e-12, "tolerance": 1e-6, "tolerance_name": "DV01_REL", "adr": "ADR-031"},
+    {"currency": "EUR", "layer": "Risk", "comparison": "Sum of buckets vs parallel DV01 (relative)", "max_gap": 2.1e-7, "tolerance": 1e-6, "tolerance_name": "KEY_RATE_SUM_REL", "adr": "ADR-031"},
+    {"currency": "EUR", "layer": "Risk", "comparison": "Scenario P&L vs DV01 and convexity, 1-5bp (relative)", "max_gap": 3.3e-5, "tolerance": 1e-4, "tolerance_name": "TAYLOR_REL", "adr": "ADR-033"},
+    {"currency": "USD", "layer": "Calendar", "comparison": "US_GOVERNMENT_BOND and US_SOFR business days 1995-2060", "max_gap": 0.0, "tolerance": 0.0, "tolerance_name": null, "adr": "ADR-036"},
+    {"currency": "USD", "layer": "Curve", "comparison": "SOFR discount factors (log_linear_df)", "max_gap": 2.4e-13, "tolerance": 1e-10, "tolerance_name": "DISCOUNT_FACTOR_ABS", "adr": "ADR-036"},
+    {"currency": "USD", "layer": "Curve", "comparison": "SOFR discount factors (linear_zero)", "max_gap": 1.9e-12, "tolerance": 1e-10, "tolerance_name": "DISCOUNT_FACTOR_ABS", "adr": "ADR-036"},
+    {"currency": "USD", "layer": "OIS swap", "comparison": "PV / notional (1 404 swaps)", "max_gap": 2.6e-13, "tolerance": 1e-8, "tolerance_name": "SWAP_REL", "adr": "ADR-036"},
+    {"currency": "USD", "layer": "OIS swap", "comparison": "Par rate (relative)", "max_gap": 3.0e-11, "tolerance": 1e-8, "tolerance_name": "SWAP_REL", "adr": "ADR-036"},
+    {"currency": "USD", "layer": "OIS swap", "comparison": "Annuity (relative)", "max_gap": 1.0e-13, "tolerance": 1e-8, "tolerance_name": "SWAP_REL", "adr": "ADR-036"}
+  ]
+}

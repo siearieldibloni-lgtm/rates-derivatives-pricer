@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import platform
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Literal
@@ -23,7 +24,8 @@ from rate_derivatives_pricer.core.engines.base import (
     PricingEngine,
     engine_for,
 )
-from rate_derivatives_pricer.core.errors import ConventionError
+from rate_derivatives_pricer.core.engines.results import PricingResult
+from rate_derivatives_pricer.core.errors import ConventionError, RatesPricerError
 from rate_derivatives_pricer.core.instruments.swaps import Instrument, Swap
 from rate_derivatives_pricer.core.market.bootstrap import CurveBuilder, CurveBuildOptions
 from rate_derivatives_pricer.core.market.environment import MarketEnvironment
@@ -39,6 +41,7 @@ from rate_derivatives_pricer.core.registry import (
     INTERPOLATORS,
     RISK_MEASURES,
     SCENARIOS,
+    InstrumentFactory,
 )
 from rate_derivatives_pricer.core.risk import (
     BumpMode,
@@ -64,6 +67,7 @@ from rate_derivatives_pricer.services.mappers import (
     trade_fingerprint,
 )
 from rate_derivatives_pricer.services.requests import (
+    BatchTrade,
     CalculationOptions,
     CarryOptions,
     MarketInput,
@@ -100,6 +104,44 @@ class ServiceResult:
     """JSON-ready result plus diagnostics."""
 
     result: dict[str, Any]
+    diagnostics: Diagnostics
+
+
+@dataclass(frozen=True, slots=True)
+class BatchItem:
+    """Outcome of one trade of a batch: a JSON-ready pricing result, or the error it raised.
+
+    Attributes:
+        trade_id: Identifier of the trade in the request.
+        result: Pricing payload (as ``/v1/price``), ``None`` on failure.
+        error: Exception raised by this trade only, ``None`` on success. A
+            :class:`RatesPricerError` is translated by the API like any request error; anything
+            else is reported as an internal error (the trace is logged, never returned).
+        trade_hash: Fingerprint of the trade.
+        duration_ms: Time spent on this trade.
+    """
+
+    trade_id: str
+    result: dict[str, Any] | None
+    error: Exception | None
+    trade_hash: str
+    duration_ms: float
+
+
+@dataclass(frozen=True, slots=True)
+class BatchOutcome:
+    """Per-trade outcomes of a batch, in request order, and the diagnostics of the batch.
+
+    Attributes:
+        valuation_date: Valuation date of the shared market.
+        currency: Currency of the shared market.
+        items: One entry per trade, in request order.
+        diagnostics: Timings, cache status, warnings (prefixed by the trade id), market hash.
+    """
+
+    valuation_date: date
+    currency: str
+    items: tuple[BatchItem, ...]
     diagnostics: Diagnostics
 
 
@@ -171,6 +213,12 @@ class PricerService:
     def cache_stats(self) -> CacheStats:
         """Curve cache counters."""
         return self._cache.stats()
+
+    def clear_cache(self) -> int:
+        """Empty the curve cache (``DELETE /v1/cache``); return the number of entries dropped."""
+        dropped = self._cache.clear()
+        logger.info("curve_cache_cleared", extra={"entries_dropped": dropped})
+        return dropped
 
     # ----------------------------------------------------------------- market data
     def list_snapshots(self) -> list[str]:
@@ -271,14 +319,8 @@ class PricerService:
         engine = engine_for(trade.type, DEFAULT_PRICING_METHOD)
 
         snapshot, env, cache_status, market_hash = self._environment(market, options, timings)
-        instrument = factory(dict(trade.params), snapshot.valuation_date)
-        if instrument.currency != snapshot.currency:
-            raise ConventionError(
-                "trade currency differs from the market data currency (no FX in v1)",
-                {"trade_currency": instrument.currency, "market_currency": snapshot.currency},
-            )
         pricing_started = time.perf_counter()
-        pricing = engine.price(instrument, env)
+        pricing = _price_trade(factory, engine, trade, snapshot, env)
         timings["pricing"] = _elapsed_ms(pricing_started)
         timings["total"] = _elapsed_ms(started)
 
@@ -307,6 +349,108 @@ class PricerService:
                 curve_cache=cache_status,
                 warnings=pricing.diagnostics.warnings,
                 input_hashes={"market": market_hash, "trade": trade_hash},
+            ),
+        )
+
+    def price_batch(
+        self, market: MarketInput, trades: Sequence[BatchTrade], options: CalculationOptions
+    ) -> BatchOutcome:
+        """Price several trades on one market (``/v1/batch/price``), with errors per trade.
+
+        The market is resolved and bootstrapped once (through the curve cache). A trade that
+        fails (unknown type, invalid definition, missing fixings, unexpected error) only fails
+        its own entry: the other trades are still priced.
+
+        Raises:
+            MarketDataError: Invalid or missing market data (shared by every trade).
+            ConventionError: Unknown currency, interpolation or solver.
+            CalibrationError: A pillar could not be calibrated.
+        """
+        started = time.perf_counter()
+        timings: dict[str, float] = {}
+        snapshot, env, cache_status, market_hash = self._environment(market, options, timings)
+
+        pricing_started = time.perf_counter()
+        items: list[BatchItem] = []
+        warnings: list[str] = []
+        for entry in trades:
+            trade_started = time.perf_counter()
+            trade_hash = trade_fingerprint(entry.trade)
+            result: dict[str, Any] | None = None
+            error: Exception | None = None
+            try:
+                factory = INSTRUMENTS.get(entry.trade.type)
+                engine = engine_for(entry.trade.type, DEFAULT_PRICING_METHOD)
+                pricing = _price_trade(factory, engine, entry.trade, snapshot, env)
+            except RatesPricerError as rejected:
+                error = rejected
+                logger.warning(
+                    "batch_trade_rejected",
+                    extra={
+                        "trade_id": entry.trade_id,
+                        "trade_hash": trade_hash,
+                        "error_type": type(rejected).__name__,
+                        "error": rejected.message,
+                    },
+                )
+            except Exception as unexpected:
+                # One broken trade must not take the batch down: log the trace, keep going.
+                error = unexpected
+                logger.exception(
+                    "batch_trade_failed",
+                    extra={"trade_id": entry.trade_id, "trade_hash": trade_hash},
+                )
+            else:
+                result = pricing_payload(pricing)
+                warnings.extend(f"{entry.trade_id}: {w}" for w in pricing.diagnostics.warnings)
+                logger.info(
+                    "batch_trade_priced",
+                    extra={
+                        "trade_id": entry.trade_id,
+                        "trade_hash": trade_hash,
+                        "trade_type": entry.trade.type,
+                        "present_value": pricing.present_value,
+                    },
+                )
+            items.append(
+                BatchItem(
+                    trade_id=entry.trade_id,
+                    result=result,
+                    error=error,
+                    trade_hash=trade_hash,
+                    duration_ms=_elapsed_ms(trade_started),
+                )
+            )
+        timings["pricing"] = _elapsed_ms(pricing_started)
+        timings["total"] = _elapsed_ms(started)
+
+        failed = sum(1 for item in items if item.error is not None)
+        logger.info(
+            "calculation_audit",
+            extra={
+                "calculation": "batch_price",
+                "market_hash": market_hash,
+                "trade_hashes": {item.trade_id: item.trade_hash for item in items},
+                "snapshot_name": snapshot.name,
+                "currency": snapshot.currency,
+                "options": {"interpolation": options.interpolation, "solver": options.solver},
+                "versions": self.version_info(),
+                "curve_cache": cache_status,
+                "trade_count": len(items),
+                "succeeded": len(items) - failed,
+                "failed": failed,
+                "duration_ms": timings["total"],
+            },
+        )
+        return BatchOutcome(
+            valuation_date=snapshot.valuation_date,
+            currency=snapshot.currency,
+            items=tuple(items),
+            diagnostics=Diagnostics(
+                timings_ms=timings,
+                curve_cache=cache_status,
+                warnings=tuple(warnings),
+                input_hashes={"market": market_hash},
             ),
         )
 
@@ -525,6 +669,29 @@ class PricerService:
                 input_hashes={"market": market_hash, "trade": trade_hash},
             ),
         )
+
+
+def _price_trade(
+    factory: InstrumentFactory,
+    engine: PricingEngine,
+    trade: TradeInput,
+    snapshot: MarketSnapshot,
+    env: MarketEnvironment,
+) -> PricingResult:
+    """Build the instrument of ``trade`` on ``snapshot`` and price it on ``env``.
+
+    Raises:
+        ConventionError: Invalid trade definition, or a trade currency other than the market
+            currency (no FX in v1).
+        ScheduleError | MarketDataError: Invalid dates or missing fixings.
+    """
+    instrument = factory(dict(trade.params), snapshot.valuation_date)
+    if instrument.currency != snapshot.currency:
+        raise ConventionError(
+            "trade currency differs from the market data currency (no FX in v1)",
+            {"trade_currency": instrument.currency, "market_currency": snapshot.currency},
+        )
+    return engine.price(instrument, env)
 
 
 def _horizon_pricer(engine: PricingEngine, builder: CurveBuilder) -> Pricer:

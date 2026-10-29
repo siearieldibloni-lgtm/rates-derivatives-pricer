@@ -233,6 +233,35 @@ class CarryRequest(StrictModel):
     options: CalculationOptionsModel = Field(default_factory=CalculationOptionsModel)
 
 
+#: Maximum number of trades of one ``/v1/batch/price`` request (bounded memory and latency).
+BATCH_MAX_TRADES = 1000
+TRADE_ID_MAX_LENGTH = 128
+
+
+class BatchTradeModel(TradeModel):
+    """Trade of a batch, with an optional identifier echoed in its result (index otherwise)."""
+
+    id: str | None = Field(
+        default=None, min_length=1, max_length=TRADE_ID_MAX_LENGTH, examples=["swap-001"]
+    )
+
+
+class BatchPriceRequest(StrictModel):
+    """Body of ``POST /v1/batch/price``: several trades priced on one market."""
+
+    market: MarketModel
+    trades: list[BatchTradeModel] = Field(min_length=1, max_length=BATCH_MAX_TRADES)
+    options: CalculationOptionsModel = Field(default_factory=CalculationOptionsModel)
+
+    @model_validator(mode="after")
+    def _unique_ids(self) -> BatchPriceRequest:
+        ids = [trade.id for trade in self.trades if trade.id is not None]
+        duplicates = sorted({trade_id for trade_id in ids if ids.count(trade_id) > 1})
+        if duplicates:
+            raise ValueError(f"duplicate trade ids: {duplicates}")
+        return self
+
+
 # --------------------------------------------------------------------------- responses
 class Diagnostics(BaseModel):
     """Permanent diagnostics block of every response envelope."""
@@ -511,3 +540,80 @@ class CarryResult(BaseModel):
     carry: float
     rolldown: float
     assumed_fixings: dict[str, float]
+
+
+class BatchItemResult(BaseModel):
+    """Outcome of one trade of a batch: ``result`` when ``status == "ok"``, ``error`` otherwise."""
+
+    trade_id: str
+    status: Literal["ok", "error"]
+    result: PriceResult | None = None
+    error: ErrorBody | None = None
+    trade_hash: str | None = None
+    duration_ms: float = 0.0
+
+
+class BatchSummary(BaseModel):
+    """Counts of a batch; ``total_present_value`` sums the trades priced successfully."""
+
+    trade_count: int
+    succeeded: int
+    failed: int
+    total_present_value: float
+
+
+class BatchPriceResult(BaseModel):
+    """Result of ``POST /v1/batch/price`` (trades in request order)."""
+
+    valuation_date: dt.date
+    currency: str
+    summary: BatchSummary
+    results: list[BatchItemResult]
+
+
+class CacheStatsResult(BaseModel):
+    """Result of ``GET /v1/cache/stats`` (per process: each worker has its own cache)."""
+
+    hits: int
+    misses: int
+    evictions: int
+    size: int
+    max_size: int
+    ttl_seconds: float | None
+    hit_ratio: float | None = Field(description="hits / (hits + misses); null before any lookup.")
+
+
+class CacheClearResult(BaseModel):
+    """Result of ``DELETE /v1/cache``."""
+
+    entries_dropped: int
+
+
+class LogEvent(BaseModel):
+    """One log event of the in-memory buffer (same fields as the JSON logs, no stack trace)."""
+
+    model_config = ConfigDict(extra="allow")
+
+    timestamp: dt.datetime
+    level: str
+    logger: str
+    event: str
+    request_id: str
+
+
+class LogBufferInfo(BaseModel):
+    """State of the in-memory log buffer of the process that answered."""
+
+    size: int
+    capacity: int
+    evicted: int
+
+
+class LogsResult(BaseModel):
+    """Result of ``GET /v1/logs/{request_id}``: the timeline of one request, oldest first."""
+
+    request_id: str
+    event_count: int
+    duration_ms: float = Field(description="Time between the first and the last event.")
+    events: list[LogEvent]
+    buffer: LogBufferInfo

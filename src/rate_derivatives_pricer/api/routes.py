@@ -7,17 +7,36 @@ FastAPI runs them in a worker thread, so the CPU-bound bootstrap never blocks th
 
 from __future__ import annotations
 
+import logging
+from datetime import datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Path, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import ValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from rate_derivatives_pricer.api.errors import (
+    INTERNAL_ERROR,
+    INTERNAL_ERROR_MESSAGE,
+    VALIDATION_ERROR,
+    core_error_status,
+)
+from rate_derivatives_pricer.api.log_buffer import LogRingBuffer
 from rate_derivatives_pricer.api.logging_config import get_request_id
+from rate_derivatives_pricer.api.metrics import ApiMetrics
+from rate_derivatives_pricer.api.middleware import REQUEST_ID_PATTERN
 from rate_derivatives_pricer.api.schemas import (
     SNAPSHOT_NAME_PATTERN,
     TRADE_PARAMS_SCHEMAS,
+    BatchItemResult,
+    BatchPriceRequest,
+    BatchPriceResult,
+    BatchSummary,
+    CacheClearResult,
+    CacheStatsResult,
     CalculationOptionsModel,
     CarryRequest,
     CarryResult,
@@ -26,9 +45,13 @@ from rate_derivatives_pricer.api.schemas import (
     CurvesBuildResult,
     Diagnostics,
     Envelope,
+    ErrorBody,
     ErrorResponse,
     HealthResult,
     InlineMarketModel,
+    LogBufferInfo,
+    LogEvent,
+    LogsResult,
     MarketModel,
     PriceRequest,
     PriceResult,
@@ -42,10 +65,11 @@ from rate_derivatives_pricer.api.schemas import (
     VersionResult,
 )
 from rate_derivatives_pricer.api.settings import Settings
-from rate_derivatives_pricer.core.errors import UnsupportedInstrumentError
+from rate_derivatives_pricer.core.errors import RatesPricerError, UnsupportedInstrumentError
 from rate_derivatives_pricer.services.pricer_service import Diagnostics as ServiceDiagnostics
 from rate_derivatives_pricer.services.pricer_service import PricerService
 from rate_derivatives_pricer.services.requests import (
+    BatchTrade,
     CalculationOptions,
     CarryOptions,
     InlineMarket,
@@ -61,6 +85,8 @@ ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
 }
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+MILLISECONDS_PER_SECOND = 1000.0
 
 
 def get_service(request: Request) -> PricerService:
@@ -75,7 +101,20 @@ def get_settings(request: Request) -> Settings:
     return settings
 
 
+def get_log_buffer(request: Request) -> LogRingBuffer:
+    """In-memory log buffer of the running application."""
+    log_buffer: LogRingBuffer = request.app.state.log_buffer
+    return log_buffer
+
+
+def get_metrics(request: Request) -> ApiMetrics:
+    """Prometheus metrics of the running application."""
+    metrics: ApiMetrics = request.app.state.metrics
+    return metrics
+
+
 ServiceDependency = Annotated[PricerService, Depends(get_service)]
+MetricsDependency = Annotated[ApiMetrics, Depends(get_metrics)]
 
 
 def _diagnostics(
@@ -323,3 +362,170 @@ def carry(body: CarryRequest, service: ServiceDependency) -> Envelope[CarryResul
         result=CarryResult.model_validate(outcome.result),
         diagnostics=_diagnostics(service, outcome.diagnostics),
     )
+
+
+# --------------------------------------------------------------------------- batch
+def _error_body(error: Exception) -> ErrorBody:
+    """Structured error of one batch trade, with the code a single request would get."""
+    if isinstance(error, RequestValidationError):
+        errors = [
+            {"loc": list(e.get("loc", ())), "msg": e.get("msg", ""), "type": e.get("type", "")}
+            for e in error.errors()
+        ]
+        return ErrorBody(
+            code=VALIDATION_ERROR, message="trade validation failed", details={"errors": errors}
+        )
+    if isinstance(error, RatesPricerError):
+        _, code = core_error_status(error)
+        return ErrorBody(code=code, message=error.message, details=jsonable_encoder(error.details))
+    # The trace is already logged by the service; the client only gets the generic message.
+    return ErrorBody(code=INTERNAL_ERROR, message=INTERNAL_ERROR_MESSAGE)
+
+
+@router.post(
+    "/v1/batch/price",
+    response_model=Envelope[BatchPriceResult],
+    responses=ERROR_RESPONSES,
+    tags=["calculations"],
+)
+def batch_price(
+    body: BatchPriceRequest, service: ServiceDependency, metrics: MetricsDependency
+) -> Envelope[BatchPriceResult]:
+    """Price several trades on one market, with a result or an error per trade.
+
+    The market is bootstrapped once. An invalid trade only fails its own entry (HTTP 200 with
+    partial results); an invalid market fails the whole request, as for ``/v1/price``.
+    """
+    trade_ids = [trade.id or str(position) for position, trade in enumerate(body.trades)]
+    # Parameters are validated per trade: a typo in one trade must not reject the others.
+    rejected: dict[str, ErrorBody] = {}
+    valid: list[BatchTrade] = []
+    for trade_id, trade in zip(trade_ids, body.trades, strict=True):
+        try:
+            valid.append(BatchTrade(trade_id=trade_id, trade=_trade_input(trade)))
+        except (RequestValidationError, UnsupportedInstrumentError) as error:
+            rejected[trade_id] = _error_body(error)
+            logger.warning(
+                "batch_trade_rejected",
+                extra={"trade_id": trade_id, "error_code": rejected[trade_id].code},
+            )
+
+    outcome = service.price_batch(_market_input(body.market), valid, _options(body.options))
+    priced = {item.trade_id: item for item in outcome.items}
+    results: list[BatchItemResult] = []
+    for trade_id in trade_ids:
+        if trade_id in rejected:
+            results.append(
+                BatchItemResult(trade_id=trade_id, status="error", error=rejected[trade_id])
+            )
+            continue
+        item = priced[trade_id]
+        results.append(
+            BatchItemResult(
+                trade_id=trade_id,
+                status="ok" if item.error is None else "error",
+                result=PriceResult.model_validate(item.result) if item.result else None,
+                error=_error_body(item.error) if item.error is not None else None,
+                trade_hash=item.trade_hash,
+                duration_ms=item.duration_ms,
+            )
+        )
+    for result in results:
+        metrics.count_batch_trade(result.error.code if result.error else "ok")
+
+    succeeded = [r.result for r in results if r.result is not None]
+    summary = BatchSummary(
+        trade_count=len(results),
+        succeeded=len(succeeded),
+        failed=len(results) - len(succeeded),
+        total_present_value=sum(result.present_value for result in succeeded),
+    )
+    logger.info(
+        "batch_completed",
+        extra={"trade_count": summary.trade_count, "failed": summary.failed},
+    )
+    return Envelope[BatchPriceResult](
+        request_id=get_request_id(),
+        result=BatchPriceResult(
+            valuation_date=outcome.valuation_date,
+            currency=outcome.currency,
+            summary=summary,
+            results=results,
+        ),
+        diagnostics=_diagnostics(service, outcome.diagnostics),
+    )
+
+
+# --------------------------------------------------------------------------- operations
+@router.get("/v1/cache/stats", response_model=Envelope[CacheStatsResult], tags=["operations"])
+def cache_stats(service: ServiceDependency) -> Envelope[CacheStatsResult]:
+    """Curve cache counters of the process that answers (each worker has its own cache)."""
+    stats = service.cache_stats()
+    lookups = stats.hits + stats.misses
+    return Envelope[CacheStatsResult](
+        request_id=get_request_id(),
+        result=CacheStatsResult(
+            hits=stats.hits,
+            misses=stats.misses,
+            evictions=stats.evictions,
+            size=stats.size,
+            max_size=stats.max_size,
+            ttl_seconds=stats.ttl_seconds,
+            hit_ratio=stats.hits / lookups if lookups else None,
+        ),
+        diagnostics=_diagnostics(service),
+    )
+
+
+@router.delete("/v1/cache", response_model=Envelope[CacheClearResult], tags=["operations"])
+def clear_cache(service: ServiceDependency) -> Envelope[CacheClearResult]:
+    """Empty the curve cache and reset its counters (process that answers only)."""
+    return Envelope[CacheClearResult](
+        request_id=get_request_id(),
+        result=CacheClearResult(entries_dropped=service.clear_cache()),
+        diagnostics=_diagnostics(service),
+    )
+
+
+@router.get(
+    "/v1/logs/{request_id}",
+    response_model=Envelope[LogsResult],
+    responses=ERROR_RESPONSES,
+    tags=["operations"],
+)
+def request_logs(
+    service: ServiceDependency,
+    log_buffer: Annotated[LogRingBuffer, Depends(get_log_buffer)],
+    request_id: Annotated[str, Path(pattern=REQUEST_ID_PATTERN)],
+) -> Envelope[LogsResult]:
+    """Timeline of the log events of one request, from the in-memory ring buffer.
+
+    Raises:
+        HTTPException: 404 ``NOT_FOUND`` when no event is buffered for ``request_id`` (unknown,
+            evicted, or served by another worker).
+    """
+    events = log_buffer.events_for(request_id)
+    if not events:
+        raise StarletteHTTPException(
+            404, f"no log event buffered for request_id {request_id!r} (unknown or evicted)"
+        )
+    first = datetime.fromisoformat(events[0]["timestamp"])
+    last = datetime.fromisoformat(events[-1]["timestamp"])
+    return Envelope[LogsResult](
+        request_id=get_request_id(),
+        result=LogsResult(
+            request_id=request_id,
+            event_count=len(events),
+            duration_ms=(last - first).total_seconds() * MILLISECONDS_PER_SECOND,
+            events=[LogEvent.model_validate(event) for event in events],
+            buffer=LogBufferInfo(**log_buffer.stats()),
+        ),
+        diagnostics=_diagnostics(service),
+    )
+
+
+@router.get("/metrics", tags=["probes"], response_class=Response)
+def metrics_endpoint(metrics: MetricsDependency) -> Response:
+    """Prometheus metrics (text exposition format)."""
+    content, content_type = metrics.render()
+    return Response(content=content, media_type=content_type)

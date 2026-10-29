@@ -50,8 +50,8 @@ class CurveCache(Protocol):
         """Store ``environment`` under ``key``."""
         ...
 
-    def clear(self) -> None:
-        """Drop every entry and reset the counters."""
+    def clear(self) -> int:
+        """Drop every entry, reset the counters and return the number of entries dropped."""
         ...
 
     def stats(self) -> CacheStats:
@@ -107,11 +107,13 @@ class LruCurveCache:
                 self._entries.popitem(last=False)
                 self._evictions += 1
 
-    def clear(self) -> None:
-        """Drop every entry and reset the counters."""
+    def clear(self) -> int:
+        """Drop every entry, reset the counters and return the number of entries dropped."""
         with self._lock:
+            dropped = len(self._entries)
             self._entries.clear()
             self._hits = self._misses = self._evictions = 0
+            return dropped
 
     def stats(self) -> CacheStats:
         """Current counters."""
