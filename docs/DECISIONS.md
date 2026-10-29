@@ -610,9 +610,10 @@ Statuts : Acceptée, Remplacée, Reportée.
     `scripts/smoke_test.py` (bibliothèque standard uniquement : santé, pricing, chronologie par `request_id`, batch avec
     un trade invalide, cache, métriques, dashboard), logs des conteneurs, arrêt.
 - **Conséquences :** Pour que le smoke test bloque la fusion, le check « Docker smoke test » doit être ajouté aux
-  checks obligatoires de la protection de branche (réglage GitHub, *Settings -> Rules*). Docker n'étant pas disponible
-  sur le poste de développement, les images ne sont construites qu'en CI ; le script de smoke test a été vérifié en
-  local contre un uvicorn.
+  checks obligatoires de la protection de branche (réglage GitHub, *Settings -> Rules*). Les images ont été
+  construites et lancées en local avec `docker compose up` (Docker Desktop sous Windows, 29/10/2026) : le dashboard
+  atteint l'API par le réseau Compose (`http://api:8000`) ; le script de smoke test a aussi été vérifié contre un
+  uvicorn local.
 
 ### ADR-042 : Contrat HTTP et dashboard de la phase 4
 - **Statut :** Acceptée (27/10/2026, précise ADR-011, ADR-025, ADR-030 et ADR-035)
